@@ -22,13 +22,13 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c https://github.com/pop-os/system76-power/archive/c75f3e3733b3052a6fd0d4b29c8589fd4844cbb3/system76-power-c75f3e3733b3052a6fd0d4b29c8589fd4844cbb3.tar.gz
+wget -c https://github.com/pop-os/system76-power/archive/b72813c3c36609f4641e7804401c74b8a89a5b43/system76-power-b72813c3c36609f4641e7804401c74b8a89a5b43.tar.gz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=system76-power
-VERSION=20250701.c75f3e3
-_commit=c75f3e3733b3052a6fd0d4b29c8589fd4844cbb3
+VERSION=20250812.b72813c
+_commit=b72813c3c36609f4641e7804401c74b8a89a5b43
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
