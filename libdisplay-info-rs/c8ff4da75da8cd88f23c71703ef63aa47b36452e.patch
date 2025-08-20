@@ -1,0 +1,21 @@
+From c8ff4da75da8cd88f23c71703ef63aa47b36452e Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=D0=98=D1=81=D0=BA=D0=BE=D1=80=D0=BA=D0=B0?=
+ <Miezhiko@gmail.com>
+Date: Mon, 18 Aug 2025 11:04:01 +0400
+Subject: [PATCH] allow libdisplay-info 0.3+, fix #15
+
+---
+ libdisplay-info-sys/Cargo.toml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/libdisplay-info-sys/Cargo.toml b/libdisplay-info-sys/Cargo.toml
+index cafd164..2f5c4f3 100644
+--- a/libdisplay-info-sys/Cargo.toml
++++ b/libdisplay-info-sys/Cargo.toml
+@@ -26,5 +26,5 @@ semver = "1.0.24"
+ 
+ [package.metadata.system-deps.libdisplay-info]
+ name = "libdisplay-info"
+-version = ">= 0.1.0, < 0.3.0"
++version = ">= 0.1.0, < 0.4.0"
+ v0_2 = { version = "0.2.0" }
