@@ -22,13 +22,13 @@
 #  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 #  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c https://github.com/pop-os/cosmic-store/archive/88deb72f5357a77c926f96564fcfd9d6d1b55b1b/cosmic-store-88deb72f5357a77c926f96564fcfd9d6d1b55b1b.tar.gz
+wget -c https://github.com/pop-os/cosmic-store/archive/06651b6135a9500b629ebab3b7d2041e4f26a911/cosmic-store-06651b6135a9500b629ebab3b7d2041e4f26a911.tar.gz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=cosmic-store
-VERSION=20250818.88deb72
-_commit=88deb72f5357a77c926f96564fcfd9d6d1b55b1b
+VERSION=20250822.06651b6
+_commit=06651b6135a9500b629ebab3b7d2041e4f26a911
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
