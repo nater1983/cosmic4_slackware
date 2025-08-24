@@ -117,6 +117,10 @@ find $PKG -name perllocal.pod \
 mkdir -p $PKG/usr/doc/$PRGNAM-$VERSION
 cp -a CHANGELOG.md LICENSE_GPL.txt LICENSE_LGPL.txt LICENSE_MIT.txt README.md $PKG/usr/doc/$PRGNAM-$VERSION
 cat $CWD/$PRGNAM.SlackBuild > $PKG/usr/doc/$PRGNAM-$VERSION/$PRGNAM.SlackBuild
+# Remove systemd files if they exist
+if [ -d $PKG/usr/lib$LIBDIRSUFFIX/systemd ]; then
+  rm -rf $PKG/usr/lib$LIBDIRSUFFIX/systemd
+fi
 cp -a  $PKG/usr/share/gtk-doc/html/gtk-layer-shell/* $PKG/usr/doc/$PRGNAM-$VERSION
 rm -r $PKG/usr/share/gtk-doc/
 
