@@ -1,5 +1,6 @@
 #!/bin/bash
 # Copyright 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2015, 2018, 2020, 2021, 2022  Patrick J. Volkerding, Sebeka, MN, USA
+# Copyright 2025 Nathaniel Russell <naterussell83@gmail.com>
 # All rights reserved.
 #
 # Redistribution and use of this script, with or without modification, is
@@ -141,16 +142,6 @@ chmod 755 $PKG/lib${LIBDIRSUFFIX}/lib*.so.* $PKG/usr/lib${LIBDIRSUFFIX}/lib*.so.
 # Don't ship symlinks in aaa_libraries... it's just asking for trouble.
 # installpkg will create them if needed by running ldconfig.
 find $PKG -type l -exec rm --verbose "{}" \+
-
-# Time to ask for trouble. We should add a few compatibility symlinks for the
-# non-wide ncurses libraries, and for the now built-in tic/tinfo:
-( cd $PKG/lib${LIBDIRSUFFIX}
-  ln -sf libformw.so.6 libform.so.6
-  ln -sf libmenuw.so.6 libmenu.so.6
-  ln -sf libncurses++w.so.6 libncurses++.so.6
-  ln -sf libncursesw.so.6 libncurses.so.6
-  ln -sf libpanelw.so.6 libpanel.so.6
-)
 
 mkdir -p $PKG/install
 cat $CWD/slack-desc > $PKG/install/slack-desc
