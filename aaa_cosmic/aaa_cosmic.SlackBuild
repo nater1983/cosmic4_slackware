@@ -98,44 +98,6 @@ cat $CWD/tracked-files \
   )
 done
 
-cat $CWD/symlinks-to-tracked-libs-tmp.d/* \
-  | grep -v "^#" | grep -v "^$" \
-  | sed -e "s#^/lib/#/lib${LIBDIRSUFFIX}/#" \
-        -e "s#^/usr/lib/#/usr/lib${LIBDIRSUFFIX}/#" \
-  | while read library ; do
-  ( if [ ! -e $library ]; then
-      echo "WARNING: $library not found"
-      sleep 10
-      exit 0
-    fi
-    echo "Adding $library"
-    mkdir -p $(dirname $library | cut -b2- )
-    cd $(dirname $library | cut -b2- )
-    rm -f $(basename $library)
-    cp -a $library .
-    rm -f $(readlink $library)
-    cp -a $(dirname $library)/$(readlink $library) .
-  )
-done
-
-cat $CWD/tracked-files-tmp.d/* \
-  | grep -v "^#" | grep -v "^$" \
-  | sed -e "s#^/lib/#/lib${LIBDIRSUFFIX}/#" \
-        -e "s#^/usr/lib/#/usr/lib${LIBDIRSUFFIX}/#" \
-  | while read library ; do
-  ( if [ ! -e $library ]; then
-      echo "WARNING: $library not found"
-      sleep 10
-      exit 0
-    fi
-    echo "Adding $library"
-    mkdir -p $(dirname $library | cut -b2- )
-    cd $(dirname $library | cut -b2- )
-    rm -f $(basename $library)
-    cp -a $library .
-  )
-done
-
 # Make sure shared libraries are executable:
 chmod 755 $PKG/lib${LIBDIRSUFFIX}/lib*.so.* $PKG/usr/lib${LIBDIRSUFFIX}/lib*.so.*
 
