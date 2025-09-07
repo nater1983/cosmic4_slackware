@@ -22,13 +22,13 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c https://github.com/pop-os/cosmic-comp/archive/3f74a22cca982de708a4ce2138009ec0b4756cd9/cosmic-comp-3f74a22cca982de708a4ce2138009ec0b4756cd9.tar.gz
+wget -c https://github.com/pop-os/cosmic-comp/archive/dfdb375c0a150682af47db8d8fff46664ca767ac/cosmic-comp-dfdb375c0a150682af47db8d8fff46664ca767ac.tar.gz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=cosmic-comp
-VERSION=20250902.3f74a22
-_commit=3f74a22cca982de708a4ce2138009ec0b4756cd9
+VERSION=20250905.dfdb375
+_commit=dfdb375c0a150682af47db8d8fff46664ca767ac
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
