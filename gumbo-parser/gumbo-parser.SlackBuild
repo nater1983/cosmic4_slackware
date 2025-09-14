@@ -65,7 +65,7 @@ mkdir -p $TMP $PKG
 cd $TMP
 rm -rf $PRGNAM $VERSION
 tar xvf $CWD/$VERSION.tar.gz
-mv $VERSION $PRGNAM-$VERSION
+mv $PRGNAM $PRGNAM-$VERSION
 cd $PRGNAM-$VERSION
 chown -R root:root .
 find -L . \
