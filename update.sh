@@ -84,7 +84,7 @@ for PRGNAM in "${!CORE_REPOS[@]}"; do
   REPO_NAME=${CORE_REPOS[$PRGNAM]}
   GITDIR=$(mktemp -dt "$PRGNAM.git.XXXXXX")
 
-  git clone --depth 1 --branch main "https://github.com/pop-os/$REPO_NAME.git" "$GITDIR"
+  git clone --depth 1 "https://github.com/pop-os/$REPO_NAME.git" "$GITDIR"
   cd "$GITDIR"
 
   git fetch --tags
