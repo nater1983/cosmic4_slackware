@@ -58,10 +58,15 @@ for PRGNAM in "${!repos[@]}"; do
 
   # Find the latest tag (highest semver-like version)
   TAG=$(git tag --sort=-v:refname | head -n 1)
-  git checkout "$TAG"
 
-  # Strip "epoch-" prefix if present for version
-  VERSION="${TAG#epoch-}"
+  if [ -z "$TAG" ]; then
+      echo "No tags found, using default branch"
+      VERSION=$(git rev-parse --short HEAD)  # fallback version
+  else
+      git checkout "$TAG"
+      # Strip "epoch-" prefix if present for version
+      VERSION="${TAG#epoch-}"
+  fi
 
   # Remove .git directory and .gitignore files
   rm -rf .git
