@@ -45,17 +45,23 @@ for PRGNAM in "${!repos[@]}"; do
   REPO_NAME=${repos[$PRGNAM]}
   CLONE_URL="$GITHUB_BASE_URL/$REPO_NAME.git"
 
+  echo "Processing $PRGNAM from $CLONE_URL..."
+
   # Create a temporary directory for the git repository
   GITDIR=$(mktemp -dt "$PRGNAM.git.XXXXXX")
-  git clone --depth 1 "$CLONE_URL" "$GITDIR" || { echo "Failed to clone $CLONE_URL"; exit 1; }
-    
-  # Extract the version and commit information
-  cd "$GITDIR"
-  VERSION=$(git log --date=format:%Y%m%d --pretty=format:%cd.%h -n1)
-  _commit=$(git rev-parse HEAD)
+  git clone "$CLONE_URL" "$GITDIR" || { echo "Failed to clone $CLONE_URL"; exit 1; }
 
-  # Create the tarball URL
-  TARBALL_URL="$GITHUB_BASE_URL/$REPO_NAME/archive/$_commit/$REPO_NAME-$_commit.tar.gz"
+  cd "$GITDIR"
+
+  # Fetch all tags
+  git fetch --tags
+
+  # Find the latest tag (highest semver-like version)
+  TAG=$(git tag --sort=-v:refname | head -n 1)
+  git checkout "$TAG"
+
+  # Strip "epoch-" prefix if present for version
+  VERSION="${TAG#epoch-}"
 
   # Remove .git directory and .gitignore files
   rm -rf .git
@@ -67,18 +73,26 @@ for PRGNAM in "${!repos[@]}"; do
   # Update the SlackBuild script in the project directory
   SLACKBUILD="$ROOT_DIR/$PRGNAM/$PRGNAM.SlackBuild"
   if [ -f "$SLACKBUILD" ]; then
-    sed -i "s|^wget -c .*|wget -c $TARBALL_URL|" "$SLACKBUILD"
+    sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/source/$PRGNAM-$VERSION.tar.xz|" "$SLACKBUILD"
     sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
-    sed -i "s/^_commit=.*/_commit=${_commit}/" "$SLACKBUILD"
-    echo "Updated $SLACKBUILD with the latest version and commit."
+    echo "Updated $SLACKBUILD to use tarball $PRGNAM-$VERSION.tar.xz"
   else
     echo "SlackBuild script not found in $ROOT_DIR/$PRGNAM. Skipping update for $PRGNAM."
   fi
 
-  # Create a tarball
+  # Rename the cloned repo directory to match project name + version
   mv "$GITDIR" "$PRGNAM-$VERSION"
-  tar cvfJ "$PRGNAM-$VERSION.tar.xz" "$PRGNAM-$VERSION"
+
+  # Create the tarball
+  tar cfJ "$PRGNAM-$VERSION.tar.xz" "$PRGNAM-$VERSION"
+
+  # Remove the temporary directory
   rm -rf "$PRGNAM-$VERSION"
+
+  # Move the tarball to the hosted source directory
+  mv "$PRGNAM-$VERSION.tar.xz" /opt/htdocs/linux/cosmic/source/
+
+  echo "Created and moved tarball $PRGNAM-$VERSION.tar.xz"
 
 done  # <-- This was missing, ending the loop
 
