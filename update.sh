@@ -2,6 +2,61 @@
 
 # Array of project names and corresponding GitHub repository names
 declare -A repos=(
+  ["launcher"]="launcher" 
+  ["pop-gtk-theme"]="gtk-theme" 
+  ["pop-icon-theme"]="icon-theme"  
+  ["system76-fonts"]="fonts"
+  ["system76-power"]="system76-power"
+  ["xdg-desktop-portal-cosmic"]="xdg-desktop-portal-cosmic"
+)
+
+# Exit script on any error
+set -e
+
+# Root source directory (where this script is located)
+ROOT_DIR="$(pwd)"
+
+# Base GitHub URL
+GITHUB_BASE_URL="https://github.com/pop-os"
+
+# -------------------------------
+# Main loop: clone repos, update SlackBuild, create tarballs
+# -------------------------------
+for PRGNAM in "${!repos[@]}"; do
+  REPO_NAME=${repos[$PRGNAM]}
+  CLONE_URL="$GITHUB_BASE_URL/$REPO_NAME.git"
+
+  GITDIR=$(mktemp -dt "$PRGNAM.git.XXXXXX")
+  git clone --depth 1 "$CLONE_URL" "$GITDIR" || { echo "Failed to clone $CLONE_URL"; exit 1; }
+
+  cd "$GITDIR"
+  VERSION=$(git log --date=format:%Y%m%d --pretty=format:%cd.%h -n1)
+  _commit=$(git rev-parse HEAD)
+
+  rm -rf .git
+  find . -name .gitignore -print0 | xargs -0 rm -f
+
+  cd "$ROOT_DIR"
+
+  SLACKBUILD="$ROOT_DIR/$PRGNAM/$PRGNAM.SlackBuild"
+  if [ -f "$SLACKBUILD" ]; then
+    sed -i "s|^wget -c .*|wget -c $GITHUB_BASE_URL/$REPO_NAME/archive/$_commit/$REPO_NAME-$_commit.tar.gz|" "$SLACKBUILD"
+    sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
+    sed -i "s/^_commit=.*/_commit=${_commit}/" "$SLACKBUILD"
+    echo "Updated $SLACKBUILD with the latest version and commit."
+  else
+    echo "SlackBuild script not found in $ROOT_DIR/$PRGNAM. Skipping update for $PRGNAM."
+  fi
+
+  mv "$GITDIR" "$PRGNAM-$VERSION"
+  tar cvfJ "$PRGNAM-$VERSION.tar.xz" "$PRGNAM-$VERSION"
+  rm -rf "$PRGNAM-$VERSION"
+done
+
+# -------------------------------
+# Cosmic Core Apps: use Git tags for VERSION
+# -------------------------------
+declare -A CORE_REPOS=(
   ["cosmic-applets"]="cosmic-applets"
   ["cosmic-applibrary"]="cosmic-applibrary"
   ["cosmic-bg"]="cosmic-bg"
@@ -23,66 +78,41 @@ declare -A repos=(
   ["cosmic-store"]="cosmic-store"
   ["cosmic-idle"]="cosmic-idle"
   ["cosmic-workspaces-epoch"]="cosmic-workspaces-epoch"
-  ["launcher"]="launcher" 
-  ["pop-gtk-theme"]="gtk-theme" 
-  ["pop-icon-theme"]="icon-theme"  # Directory name differs from repository name
-  ["system76-fonts"]="fonts"
-  ["system76-power"]="system76-power"
-  ["xdg-desktop-portal-cosmic"]="xdg-desktop-portal-cosmic"
 )
 
-# Exit script on any error
-set -e
-
-# Root source directory (where this script is located)
-ROOT_DIR="$(pwd)"
-
-# Base GitHub URL
-GITHUB_BASE_URL="https://github.com/pop-os"
-
-# Loop through each project name
-for PRGNAM in "${!repos[@]}"; do
-  REPO_NAME=${repos[$PRGNAM]}
-  CLONE_URL="$GITHUB_BASE_URL/$REPO_NAME.git"
-
-  # Create a temporary directory for the git repository
+for PRGNAM in "${!CORE_REPOS[@]}"; do
+  REPO_NAME=${CORE_REPOS[$PRGNAM]}
   GITDIR=$(mktemp -dt "$PRGNAM.git.XXXXXX")
-  git clone --depth 1 "$CLONE_URL" "$GITDIR" || { echo "Failed to clone $CLONE_URL"; exit 1; }
-    
-  # Extract the version and commit information
+
+  git clone --depth 1 --branch main "https://github.com/pop-os/$REPO_NAME.git" "$GITDIR"
   cd "$GITDIR"
-  VERSION=$(git log --date=format:%Y%m%d --pretty=format:%cd.%h -n1)
+
+  git fetch --tags
+  VERSION=$(git describe --tags $(git rev-list --tags --max-count=1))
   _commit=$(git rev-parse HEAD)
 
-  # Create the tarball URL
-  TARBALL_URL="$GITHUB_BASE_URL/$REPO_NAME/archive/$_commit/$REPO_NAME-$_commit.tar.gz"
-
-  # Remove .git directory and .gitignore files
   rm -rf .git
   find . -name .gitignore -print0 | xargs -0 rm -f
 
-  # Move back to the root directory
   cd "$ROOT_DIR"
 
-  # Update the SlackBuild script in the project directory
   SLACKBUILD="$ROOT_DIR/$PRGNAM/$PRGNAM.SlackBuild"
   if [ -f "$SLACKBUILD" ]; then
-    sed -i "s|^wget -c .*|wget -c $TARBALL_URL|" "$SLACKBUILD"
+    sed -i "s|^wget -c .*|wget -c https://github.com/pop-os/$REPO_NAME/archive/$VERSION/$REPO_NAME-$VERSION.tar.gz|" "$SLACKBUILD"
     sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
-    sed -i "s/^_commit=.*/_commit=${_commit}/" "$SLACKBUILD"
-    echo "Updated $SLACKBUILD with the latest version and commit."
+    sed -i "s/^_commit=.*/_commit=${VERSION}/" "$SLACKBUILD"
+    echo "Updated $SLACKBUILD with latest tag $VERSION"
   else
-    echo "SlackBuild script not found in $ROOT_DIR/$PRGNAM. Skipping update for $PRGNAM."
+    echo "SlackBuild script not found for $PRGNAM. Skipping."
   fi
 
-  # Create a tarball
   mv "$GITDIR" "$PRGNAM-$VERSION"
   tar cvfJ "$PRGNAM-$VERSION.tar.xz" "$PRGNAM-$VERSION"
   rm -rf "$PRGNAM-$VERSION"
-
-done  # <-- This was missing, ending the loop
+done
 
 echo "All projects have been processed and archives created."
+
 
 # Handling the 'just' repository separately
 JUST_REPO="https://github.com/casey/just.git"
