@@ -96,8 +96,11 @@ for PRGNAM in "${!CORE_REPOS[@]}"; do
 
   cd "$ROOT_DIR"
 
-  # Remove '-epoch' from PRGNAM for tarball and SlackBuild updates
-  TAR_PRGNAM=${PRGNAM/-epoch/}
+  # Remove '-epoch' only for the tarball/display name
+  TAR_PRGNAM="$PRGNAM"
+  if [[ "$PRGNAM" == *"-epoch"* ]]; then
+      TAR_PRGNAM="${PRGNAM%-epoch}"
+  fi
 
   SLACKBUILD="$ROOT_DIR/$PRGNAM/$PRGNAM.SlackBuild"
   if [ -f "$SLACKBUILD" ]; then
