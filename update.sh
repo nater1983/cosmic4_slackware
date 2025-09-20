@@ -56,43 +56,31 @@ for PRGNAM in "${!repos[@]}"; do
   # Fetch all tags
   git fetch --tags
 
-  # Find the latest tag (highest semver-like version)
+  # Find the latest tag
   TAG=$(git tag --sort=-v:refname | head -n 1)
 
-  if [ -z "$TAG" ]; then
-      echo "No tags found, using default branch"
-      VERSION=$(git rev-parse --short HEAD)  # fallback version
-  else
+  if [ -n "$TAG" ]; then
+      # Tag exists
       git checkout "$TAG"
-      # Strip "epoch-" prefix if present for version
-      VERSION="${TAG#epoch-}"
-  fi
-
-  # Remove .git directory and .gitignore files
-  rm -rf .git
-  find . -name .gitignore -print0 | xargs -0 rm -f
-
-  # Move back to the root directory
-  cd "$ROOT_DIR"
-
-  # Update the SlackBuild script in the project directory
-  SLACKBUILD="$ROOT_DIR/$PRGNAM/$PRGNAM.SlackBuild"
-  if [ -f "$SLACKBUILD" ]; then
-    sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/source/$PRGNAM-$VERSION.tar.xz|" "$SLACKBUILD"
-    sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
-    echo "Updated $SLACKBUILD to use tarball $PRGNAM-$VERSION.tar.xz"
+      VERSION="${TAG#epoch-}"    # strip "epoch-" if present
   else
-    echo "SlackBuild script not found in $ROOT_DIR/$PRGNAM. Skipping update for $PRGNAM."
+      # No tag → use date + short commit hash
+      SHORT_COMMIT=$(git rev-parse --short HEAD)
+      DATE=$(date +%Y%m%d)
+      VERSION="${DATE}.${SHORT_COMMIT}"
   fi
 
-  # Rename the cloned repo directory to match project name + version
-  mv "$GITDIR" "$PRGNAM-$VERSION"
+  # Directory and tarball name
+  TARBALL_NAME="${PRGNAM}-${VERSION}"
+
+  # Rename cloned repo
+  mv "$GITDIR" "$TARBALL_NAME"
 
   # Create the tarball
-  tar cfJ "$PRGNAM-$VERSION.tar.xz" "$PRGNAM-$VERSION"
+  tar cfJ "$TARBALL_NAME.tar.xz" "$TARBALL_NAME"
 
-  # Remove the temporary directory
-  rm -rf "$PRGNAM-$VERSION"
+  # Remove directory
+  rm -rf "$TARBALL_NAME"
 
   # Move the tarball to the hosted source directory
   mkdir -p /opt/htdocs/linux/cosmic/source/tarballs
