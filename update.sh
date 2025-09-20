@@ -7,7 +7,6 @@ declare -A repos=(
   ["pop-icon-theme"]="icon-theme"  
   ["system76-fonts"]="fonts"
   ["system76-power"]="system76-power"
-  ["xdg-desktop-portal-cosmic"]="xdg-desktop-portal-cosmic"
 )
 
 # Exit script on any error
@@ -78,6 +77,8 @@ declare -A CORE_REPOS=(
   ["cosmic-store"]="cosmic-store"
   ["cosmic-idle"]="cosmic-idle"
   ["cosmic-workspaces-epoch"]="cosmic-workspaces-epoch"
+  ["xdg-desktop-portal-cosmic"]="xdg-desktop-portal-cosmic"
+
 )
 
 for PRGNAM in "${!CORE_REPOS[@]}"; do
@@ -100,25 +101,19 @@ _commit=$(git rev-parse HEAD)
 
   cd "$ROOT_DIR"
 
-  # Remove '-epoch' only for the tarball/display name
-  TAR_PRGNAM="$PRGNAM"
-  if [[ "$PRGNAM" == *"-epoch"* ]]; then
-      TAR_PRGNAM="${PRGNAM%-epoch}"
-  fi
-
   SLACKBUILD="$ROOT_DIR/$PRGNAM/$PRGNAM.SlackBuild"
   if [ -f "$SLACKBUILD" ]; then
     sed -i "s|^wget -c .*|wget -c https://github.com/pop-os/$REPO_NAME/archive/$VERSION/$TAR_PRGNAM-$VERSION.tar.gz|" "$SLACKBUILD"
-    sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
+    sed -i "s/^VERSION=.*/VERSION=/" "$SLACKBUILD"
     sed -i "s/^_commit=.*/_commit=${VERSION}/" "$SLACKBUILD"
     echo "Updated $SLACKBUILD with latest tag $VERSION"
   else
     echo "SlackBuild script not found for $PRGNAM. Skipping."
   fi
 
-  mv "$GITDIR" "$TAR_PRGNAM-$VERSION"
-  tar cvfJ "$TAR_PRGNAM-$VERSION.tar.xz" "$TAR_PRGNAM-$VERSION"
-  rm -rf "$TAR_PRGNAM-$VERSION"
+  mv "$GITDIR" "$PRGNAM-$VERSION"
+  tar cvfJ "$PRGNAM-$VERSION.tar.xz" "$PRGNAM-$VERSION"
+  rm -rf "$PRGNAM-$VERSION"
 done
 
 echo "All projects have been processed and archives created."
