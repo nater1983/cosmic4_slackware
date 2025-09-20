@@ -90,7 +90,8 @@ for PRGNAM in "${!repos[@]}"; do
   rm -rf "$PRGNAM-$VERSION"
 
   # Move the tarball to the hosted source directory
-  mv "$PRGNAM-$VERSION.tar.xz" /opt/htdocs/linux/cosmic/source/
+  mkdir -p /opt/htdocs/linux/cosmic/source/tarballs
+  mv "$PRGNAM-$VERSION.tar.xz" /opt/htdocs/linux/cosmic/source/tarballs
 
   echo "Created and moved tarball $PRGNAM-$VERSION.tar.xz"
 
