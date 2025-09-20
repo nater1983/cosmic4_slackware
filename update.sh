@@ -96,19 +96,22 @@ for PRGNAM in "${!CORE_REPOS[@]}"; do
 
   cd "$ROOT_DIR"
 
+  # Remove '-epoch' from PRGNAM for tarball and SlackBuild updates
+  TAR_PRGNAM=${PRGNAM/-epoch/}
+
   SLACKBUILD="$ROOT_DIR/$PRGNAM/$PRGNAM.SlackBuild"
   if [ -f "$SLACKBUILD" ]; then
-    sed -i "s|^wget -c .*|wget -c https://github.com/pop-os/$REPO_NAME/archive/$VERSION/$REPO_NAME-$VERSION.tar.gz|" "$SLACKBUILD"
+    sed -i "s|^wget -c .*|wget -c https://github.com/pop-os/$REPO_NAME/archive/$VERSION/$TAR_PRGNAM-$VERSION.tar.gz|" "$SLACKBUILD"
     sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
-    sed -i "s/^_commit=.*/_commit=${VERSION}/" "$SLACKBUILD"
+    sed -i "s/^_commit=.*/_commit=${_commit}/" "$SLACKBUILD"
     echo "Updated $SLACKBUILD with latest tag $VERSION"
   else
     echo "SlackBuild script not found for $PRGNAM. Skipping."
   fi
 
-  mv "$GITDIR" "$PRGNAM-$VERSION"
-  tar cvfJ "$PRGNAM-$VERSION.tar.xz" "$PRGNAM-$VERSION"
-  rm -rf "$PRGNAM-$VERSION"
+  mv "$GITDIR" "$TAR_PRGNAM-$VERSION"
+  tar cvfJ "$TAR_PRGNAM-$VERSION.tar.xz" "$TAR_PRGNAM-$VERSION"
+  rm -rf "$TAR_PRGNAM-$VERSION"
 done
 
 echo "All projects have been processed and archives created."
