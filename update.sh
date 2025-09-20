@@ -103,7 +103,7 @@ for PRGNAM in "${!CORE_REPOS[@]}"; do
   if [ -f "$SLACKBUILD" ]; then
     sed -i "s|^wget -c .*|wget -c https://github.com/pop-os/$REPO_NAME/archive/$VERSION/$TAR_PRGNAM-$VERSION.tar.gz|" "$SLACKBUILD"
     sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
-    sed -i "s/^_commit=.*/_commit=${_commit}/" "$SLACKBUILD"
+    sed -i "s/^_commit=.*/_commit=${VERSION}/" "$SLACKBUILD"
     echo "Updated $SLACKBUILD with latest tag $VERSION"
   else
     echo "SlackBuild script not found for $PRGNAM. Skipping."
