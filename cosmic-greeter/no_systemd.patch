@@ -48,3 +48,16 @@ index 7c245b1..c514985 100644
 +    #[cfg(debug_assertions)]
          warn!("failed to connect to journald")
      }
+
+diff --git a/daemon/src/main.rs b/daemon/src/main.rs
+index 1dcd6ff..c8dd924 100644
+--- a/daemon/src/main.rs
++++ b/daemon/src/main.rs
+@@ -129,6 +129,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
+             .with(env_filter)
+             .try_init()
+             .wrap_err("failed to initialize logger")?;
++    #[cfg(debug_assertions)]
+         warn!("failed to connect to journald")
+     }
+ 
