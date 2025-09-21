@@ -1,5 +1,6 @@
-getent passwd cosmic-initial-setup >/dev/null || adduser --system --force-badname --quiet \
-    --home /run/cosmic-initial-setup/ --no-create-home --shell /bin/bash cosmic-initial-setup
+if ! getent passwd cosmic-initial-setup >/dev/null; then
+  useradd -r -s /bin/bash -d /run/cosmic-initial-setup cosmic-initial-setup
+fi
 
 if [ -x /usr/bin/update-mime-database ]; then
   /usr/bin/update-mime-database /usr/share/mime &> /dev/null
