@@ -324,7 +324,7 @@ cd "$ROOT_DIR" || { echo "Failed to return to the root directory"; exit 1; }
 SLACKBUILD="$ROOT_DIR/$COSMIC_GREETER_NAME/$COSMIC_GREETER_NAME.SlackBuild"
 if [ -f "$SLACKBUILD" ]; then
   # Update the wget line
-  sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/distfile/$COSMIC_GREETER_NAME-$_commit.tar.xz|" "$SLACKBUILD"
+  sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$COSMIC_GREETER_NAME-$_commit.tar.xz|" "$SLACKBUILD"
 
   # Update the VERSION and _commit lines
   sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
@@ -339,9 +339,9 @@ fi
 mv "$COSMIC_GREETER_DIR" "$COSMIC_GREETER_NAME-$_commit"
 tar cvfJ "$COSMIC_GREETER_NAME-$_commit.tar.xz" "$COSMIC_GREETER_NAME-$_commit"
 rm -fr "$COSMIC_GREETER_NAME-$_commit"
-mv "$COSMIC_GREETER_NAME-$_commit.tar.xz" /opt/htdocs/distfile/
+mv "$COSMIC_GREETER_NAME-$_commit.tar.xz" /opt/htdocs/linux/cosmic/tarballs/
 
-echo "The 'cosmic-greeter' repository has been processed, archived, and moved to /opt/htdocs/distfile."
+echo "The 'cosmic-greeter' repository has been processed, archived, and moved to /opt/htdocs/linux/cosmic/tarballs/."
 
 echo "All projects have been processed and archives created."
 
