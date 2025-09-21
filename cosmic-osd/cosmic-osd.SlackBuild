@@ -22,13 +22,13 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c https://github.com/pop-os/cosmic-osd/archive/f826e1184eedf80235e35098515292f62a773674/cosmic-osd-f826e1184eedf80235e35098515292f62a773674.tar.gz
+wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/cosmic-osd-1.0.0-beta.1.tar.gz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=cosmic-osd
-VERSION=20250907.f826e11
-_commit=f826e1184eedf80235e35098515292f62a773674
+VERSION=
+_commit=1.0.0-beta.1
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}

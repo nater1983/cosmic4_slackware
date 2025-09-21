@@ -22,13 +22,13 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c https://github.com/pop-os/cosmic-panel/archive/ded350de2aa361a53783f5cdf611df7d258e721d/cosmic-panel-ded350de2aa361a53783f5cdf611df7d258e721d.tar.gz
+wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/cosmic-panel-1.0.0-beta.1.tar.gz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=cosmic-panel
-VERSION=20250904.ded350d
-_commit=ded350de2aa361a53783f5cdf611df7d258e721d
+VERSION=
+_commit=1.0.0-beta.1
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}

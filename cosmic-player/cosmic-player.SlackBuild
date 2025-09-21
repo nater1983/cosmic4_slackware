@@ -22,13 +22,13 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c https://github.com/pop-os/cosmic-player/archive/0e49f40569ee931623c4f16f9d74a82a72be26bf/cosmic-player-0e49f40569ee931623c4f16f9d74a82a72be26bf.tar.gz
+wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/cosmic-player-1.0.0-beta.1.tar.gz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=cosmic-player
-VERSION=20250907.0e49f40
-_commit=0e49f40569ee931623c4f16f9d74a82a72be26bf
+VERSION=
+_commit=1.0.0-beta.1
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
