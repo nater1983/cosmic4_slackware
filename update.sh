@@ -120,6 +120,7 @@ for PRGNAM in "${!CORE_REPOS[@]}"; do
   mv "$GITDIR" "$PRGNAM-$VERSION"
   tar cvfJ "$PRGNAM-$VERSION.tar.xz" "$PRGNAM-$VERSION"
   rm -rf "$PRGNAM-$VERSION"
+  mv "$PRGNAM-$VERSION.tar.xz" /opt/htdocs/linux/cosmic/tarball/
 done
 
 echo "All projects have been processed and archives created."
