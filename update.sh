@@ -191,8 +191,19 @@ git lfs ls-files
 git lfs status || { echo "git-lfs encountered an error"; exit 1; }
 
 # Extract the version and commit information
-VERSION=$(git log --date=format:%Y%m%d --pretty=format:%cd.%h -n1)
-_commit=$(git rev-parse HEAD)
+git fetch --tags
+VERSION=$(git describe --tags $(git rev-list --tags --max-count=1))  # Get the latest tag for version
+#_commit=$(git rev-parse HEAD)
+
+  if [ -z "$VERSION" ]; then
+      # No tags found — use date + short commit hash instead
+      VERSION=$(git log --date=format:%Y%m%d --pretty=format:%cd.%h -n1)
+        _commit=$(git rev-parse HEAD)
+  else
+      # Strip leading 'epoch-' if present
+      VERSION=${VERSION#epoch-}
+      VERSION=$(echo "$VERSION" | sed 's/-/./g')
+  fi
 
 # Remove .git directory and .gitignore files
 rm -rf .git
@@ -205,11 +216,11 @@ cd "$ROOT_DIR" || { echo "Failed to return to the root directory"; exit 1; }
 SLACKBUILD="$ROOT_DIR/$COSMIC_WALLPAPERS_NAME/$COSMIC_WALLPAPERS_NAME.SlackBuild"
 if [ -f "$SLACKBUILD" ]; then
   # Update the wget line
-  sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/distfile/$COSMIC_WALLPAPERS_NAME-$_commit.tar.xz|" "$SLACKBUILD"
+  sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$COSMIC_WALLPAPERS_NAME-$VERSION.tar.xz|" "$SLACKBUILD"
 
   # Update the VERSION and _commit lines
   sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
-  sed -i "s/^_commit=.*/_commit=${_commit}/" "$SLACKBUILD"
+  sed -i "s/^_commit=.*/_commit=${VERSION}/" "$SLACKBUILD"
 
   echo "Updated $SLACKBUILD with the latest version and commit."
 else
@@ -217,12 +228,12 @@ else
 fi
 
 # Create a tarball and move it to /opt/htdocs/distfile
-mv "$COSMIC_WALLPAPERS_DIR" "$COSMIC_WALLPAPERS_NAME-$_commit"
-tar cvfJ "$COSMIC_WALLPAPERS_NAME-$_commit.tar.xz" "$COSMIC_WALLPAPERS_NAME-$_commit"
-rm -fr "$COSMIC_WALLPAPERS_NAME-$_commit"
-mv "$COSMIC_WALLPAPERS_NAME-$_commit.tar.xz" /opt/htdocs/distfile/
+mv "$COSMIC_WALLPAPERS_DIR" "$COSMIC_WALLPAPERS_NAME-$VERSION"
+tar cvfJ "$COSMIC_WALLPAPERS_NAME-$VERSION.tar.xz" "$COSMIC_WALLPAPERS_NAME-$VERSION"
+rm -fr "$COSMIC_WALLPAPERS_NAME-$VERSION"
+mv "$COSMIC_WALLPAPERS_NAME-$VERSION.tar.xz" /opt/htdocs/linux/cosmic/tarballs/
 
-echo "The 'cosmic-wallpapers' repository has been processed, archived, and moved to /opt/htdocs/distfile."
+echo "The 'cosmic-wallpapers' repository has been processed, archived, and moved to/opt/htdocs/linux/cosmic/tarballs/."
 
 # Set up variables
 COSMIC_EDIT_REPO="https://github.com/pop-os/cosmic-edit.git"
@@ -250,8 +261,19 @@ git lfs ls-files
 git lfs status || { echo "git-lfs encountered an error"; exit 1; }
 
 # Extract the version and commit information
-VERSION=$(git log --date=format:%Y%m%d --pretty=format:%cd.%h -n1)
-_commit=$(git rev-parse HEAD)
+git fetch --tags
+VERSION=$(git describe --tags $(git rev-list --tags --max-count=1))  # Get the latest tag for version
+#_commit=$(git rev-parse HEAD)
+
+  if [ -z "$VERSION" ]; then
+      # No tags found — use date + short commit hash instead
+      VERSION=$(git log --date=format:%Y%m%d --pretty=format:%cd.%h -n1)
+        _commit=$(git rev-parse HEAD)
+  else
+      # Strip leading 'epoch-' if present
+      VERSION=${VERSION#epoch-}
+      VERSION=$(echo "$VERSION" | sed 's/-/./g')
+  fi
 
 # Remove .git directory and .gitignore files
 rm -rf .git
@@ -264,11 +286,11 @@ cd "$ROOT_DIR" || { echo "Failed to return to the root directory"; exit 1; }
 SLACKBUILD="$ROOT_DIR/$COSMIC_EDIT_NAME/$COSMIC_EDIT_NAME.SlackBuild"
 if [ -f "$SLACKBUILD" ]; then
   # Update the wget line
-  sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/distfile/$COSMIC_EDIT_NAME-$_commit.tar.xz|" "$SLACKBUILD"
+  sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$COSMIC_EDIT_NAME-$VERSION.tar.xz|" "$SLACKBUILD"
 
   # Update the VERSION and _commit lines
   sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
-  sed -i "s/^_commit=.*/_commit=${_commit}/" "$SLACKBUILD"
+  sed -i "s/^_commit=.*/_commit=${VERSION}/" "$SLACKBUILD"
 
   echo "Updated $SLACKBUILD with the latest version and commit."
 else
@@ -276,12 +298,12 @@ else
 fi
 
 # Create a tarball and move it to /opt/htdocs/distfile
-mv "$COSMIC_EDIT_DIR" "$COSMIC_EDIT_NAME-$_commit"
-tar cvfJ "$COSMIC_EDIT_NAME-$_commit.tar.xz" "$COSMIC_EDIT_NAME-$_commit"
-rm -fr "$COSMIC_EDIT_NAME-$_commit"
-mv "$COSMIC_EDIT_NAME-$_commit.tar.xz" /opt/htdocs/distfile/
+mv "$COSMIC_EDIT_DIR" "$COSMIC_EDIT_NAME-$VERSION"
+tar cvfJ "$COSMIC_EDIT_NAME-$VERSION.tar.xz" "$COSMIC_EDIT_NAME-$VERSION"
+rm -fr "$COSMIC_EDIT_NAME-$VERSION"
+mv "$COSMIC_EDIT_NAME-$VERSION.tar.xz" /opt/htdocs/linux/cosmic/tarballs/
 
-echo "The 'cosmic-edit' repository has been processed, archived, and moved to /opt/htdocs/distfile."
+echo "The 'cosmic-edit' repository has been processed, archived, and moved to /opt/htdocs/linux/cosmic/tarballs/."
 
 # Set up variables
 COSMIC_GREETER_REPO="https://github.com/pop-os/cosmic-greeter.git"
