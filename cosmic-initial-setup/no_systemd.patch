@@ -17,3 +17,59 @@ index 844e310..b07e45f 100644
  
              let mut available_languages = SlotMap::new();
              let mut selected = DefaultKey::null();
+@@ -319,23 +319,38 @@ impl super::Page for Page {
+     }
+ }
+ 
+-pub async fn set_locale(lang: String, region: String) {
+-    _ = tokio::process::Command::new("localectl")
+-        .arg("set-locale")
+-        .args(&[
+-            ["LANG=", &lang].concat(),
+-            ["LC_ADDRESS=", &region].concat(),
+-            ["LC_IDENTIFICATION=", &region].concat(),
+-            ["LC_MEASUREMENT=", &region].concat(),
+-            ["LC_MONETARY=", &region].concat(),
+-            ["LC_NAME=", &region].concat(),
+-            ["LC_NUMERIC=", &region].concat(),
+-            ["LC_PAPER=", &region].concat(),
+-            ["LC_TELEPHONE=", &region].concat(),
+-            ["LC_TIME=", &region].concat(),
+-        ])
+-        .status()
+-        .await;
++use tokio::fs::{File, set_permissions};
++use tokio::io::AsyncWriteExt;
++use std::os::unix::fs::PermissionsExt;
++use std::path::Path;
++
++pub async fn set_locale(lang: &str, region: &str) -> std::io::Result<()> {
++    let path = Path::new("/etc/profile.d/lang.sh");
++
++    // Write LANG and all LC_* variables
++    let mut file = File::create(path).await?;
++
++    let content = format!(
++        "export LANG={lang}\n\
++         export LC_ADDRESS={region}\n\
++         export LC_IDENTIFICATION={region}\n\
++         export LC_MEASUREMENT={region}\n\
++         export LC_MONETARY={region}\n\
++         export LC_NAME={region}\n\
++         export LC_NUMERIC={region}\n\
++         export LC_PAPER={region}\n\
++         export LC_TELEPHONE={region}\n\
++         export LC_TIME={region}\n",
++        lang = lang,
++        region = region
++    );
++
++    file.write_all(content.as_bytes()).await?;
++
++    // Ensure permissions are 0755
++    set_permissions(path, std::fs::Permissions::from_mode(0o755)).await?;
++
++    Ok(())
+ }
+ 
+ fn localized_iso_codes(locale: &locales_rs::Locale) -> (String, String) {
