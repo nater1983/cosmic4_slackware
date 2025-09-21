@@ -36,3 +36,15 @@ index a567119..03c67db 100644
 +Name=com.system76.CosmicGreeter
 +Exec=/usr/bin/cosmic-greeter-daemon &
 +User=root
+
+diff --git a/src/greeter.rs b/src/greeter.rs
+index 7c245b1..c514985 100644
+--- a/src/greeter.rs
++++ b/src/greeter.rs
+@@ -135,6 +135,7 @@ pub fn main() -> Result<(), Box<dyn Error>> {
+             .with(env_filter)
+             .try_init()
+             .wrap_err("failed to initialize logger")?;
++    #[cfg(debug_assertions)]
+         warn!("failed to connect to journald")
+     }
