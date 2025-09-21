@@ -89,10 +89,19 @@ for PRGNAM in "${!CORE_REPOS[@]}"; do
   cd "$GITDIR"
 
   git fetch --tags
-  VERSION=$(git describe --tags $(git rev-list --tags --max-count=1))
 
-  # Strip leading 'epoch-' if present
-  VERSION=${VERSION#epoch-}
+  # Try to get the latest tag
+  VERSION=$(git describe --tags $(git rev-list --tags --max-count=1) 2>/dev/null || true)
+
+  if [ -z "$VERSION" ]; then
+      # No tags found — use date + short commit hash instead
+      VERSION=$(git log --date=format:%Y%m%d --pretty=format:%cd.%h -n1)
+  else
+      # Strip leading 'epoch-' if present
+      VERSION=${VERSION#epoch-}
+  fi
+
+  _commit=$(git rev-parse HEAD)
 
   rm -rf .git
   find . -name .gitignore -print0 | xargs -0 rm -f
