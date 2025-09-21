@@ -31,3 +31,14 @@ index 9d617d5..6ee03da 100644
  	)
  }
  
+diff --git a/src/main.rs b/src/main.rs
+index a6716af..2373596 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -74,6 +74,7 @@ async fn main() -> Result<()> {
+ 			.with(env_filter)
+ 			.try_init()
+ 			.wrap_err("failed to initialize logger")?;
++    #[cfg(debug_assertions)]
+ 		warn!("failed to connect to journald")
+ 	}
