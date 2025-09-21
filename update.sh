@@ -165,215 +165,67 @@ rm -rf "$JUST_REPO_NAME-$VERSION"
 
 echo "The 'just' repository has been processed, archived as $JUST_REPO_NAME-$VERSION.tar.xz, and cleaned up."
 
-# Set up variables
-COSMIC_WALLPAPERS_REPO="https://github.com/pop-os/cosmic-wallpapers.git"
-COSMIC_WALLPAPERS_NAME="cosmic-wallpapers"
-COSMIC_WALLPAPERS_DIR=$(mktemp -dt "$COSMIC_WALLPAPERS_NAME.git.XXXXXX")
+# -------------------------------
+# Cosmic Extra Apps: Wallpapers, Edit, Greeter
+# -------------------------------
+declare -A EXTRA_REPOS=(
+  ["cosmic-wallpapers"]="cosmic-wallpapers"
+  ["cosmic-edit"]="cosmic-edit"
+  ["cosmic-greeter"]="cosmic-greeter"
+  ["cosmic-initial-setup"]="cosmic-initial-setup"
 
-# Clone the repository
-git clone --depth 1 "$COSMIC_WALLPAPERS_REPO" "$COSMIC_WALLPAPERS_DIR" || { echo "Failed to clone the repository"; exit 1; }
+)
 
-# Navigate into the cloned repository
-cd "$COSMIC_WALLPAPERS_DIR" || { echo "Failed to enter the repository directory"; exit 1; }
+for PRGNAM in "${!EXTRA_REPOS[@]}"; do
+  REPO_NAME=${EXTRA_REPOS[$PRGNAM]}
+  GITDIR=$(mktemp -dt "$PRGNAM.git.XXXXXX")
 
-# Set up git-lfs and fetch LFS objects
-git lfs install
-git remote add network-origin https://github.com/pop-os/cosmic-wallpapers
-git lfs fetch --all  # Fetch all LFS objects
-git lfs pull  # Ensure all files are pulled down and available
-git lfs checkout  # Check out the actual binary files
+  git clone --depth 1 "https://github.com/pop-os/$REPO_NAME.git" "$GITDIR"
+  cd "$GITDIR"
 
-# Optional: sleep to ensure files are checked out
-sleep 5
+  # Special handling for LFS repos (wallpapers, edit, greeter all use LFS)
+  git lfs install
+  git remote add network-origin "https://github.com/pop-os/$REPO_NAME"
+  git lfs fetch --all
+  git lfs pull
+  git lfs checkout
+  git lfs status || { echo "git-lfs encountered an error"; exit 1; }
 
-# Ensure that all LFS files were properly checked out
-git lfs ls-files
-git lfs status || { echo "git-lfs encountered an error"; exit 1; }
-
-# Extract the version and commit information
-git fetch --tags
-VERSION=$(git describe --tags $(git rev-list --tags --max-count=1))  # Get the latest tag for version
-#_commit=$(git rev-parse HEAD)
-
-  if [ -z "$VERSION" ]; then
-      # No tags found — use date + short commit hash instead
-      VERSION=$(git log --date=format:%Y%m%d --pretty=format:%cd.%h -n1)
-        _commit=$(git rev-parse HEAD)
-  else
-      # Strip leading 'epoch-' if present
-      VERSION=${VERSION#epoch-}
-      VERSION=$(echo "$VERSION" | sed 's/-/./g')
-  fi
-
-# Remove .git directory and .gitignore files
-rm -rf .git
-find . -name .gitignore -print0 | xargs -0 rm -f
-
-# Navigate back to the root directory
-cd "$ROOT_DIR" || { echo "Failed to return to the root directory"; exit 1; }
-
-# Update the SlackBuild script in the project directory for 'cosmic-wallpapers'
-SLACKBUILD="$ROOT_DIR/$COSMIC_WALLPAPERS_NAME/$COSMIC_WALLPAPERS_NAME.SlackBuild"
-if [ -f "$SLACKBUILD" ]; then
-  # Update the wget line
-  sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$COSMIC_WALLPAPERS_NAME-$VERSION.tar.xz|" "$SLACKBUILD"
-
-  # Update the VERSION and _commit lines
-  sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
-  sed -i "s/^_commit=.*/_commit=${VERSION}/" "$SLACKBUILD"
-
-  echo "Updated $SLACKBUILD with the latest version and commit."
-else
-  echo "SlackBuild script not found in $ROOT_DIR/$COSMIC_WALLPAPERS_NAME. Skipping update for $COSMIC_WALLPAPERS_NAME."
-fi
-
-# Create a tarball and move it to /opt/htdocs/distfile
-mv "$COSMIC_WALLPAPERS_DIR" "$COSMIC_WALLPAPERS_NAME-$VERSION"
-tar cvfJ "$COSMIC_WALLPAPERS_NAME-$VERSION.tar.xz" "$COSMIC_WALLPAPERS_NAME-$VERSION"
-rm -fr "$COSMIC_WALLPAPERS_NAME-$VERSION"
-mv "$COSMIC_WALLPAPERS_NAME-$VERSION.tar.xz" /opt/htdocs/linux/cosmic/tarballs/
-
-echo "The 'cosmic-wallpapers' repository has been processed, archived, and moved to/opt/htdocs/linux/cosmic/tarballs/."
-
-# Set up variables
-COSMIC_EDIT_REPO="https://github.com/pop-os/cosmic-edit.git"
-COSMIC_EDIT_NAME="cosmic-edit"
-COSMIC_EDIT_DIR=$(mktemp -dt "$COSMIC_EDIT_NAME.git.XXXXXX")
-
-# Clone the repository
-git clone --depth 1 "$COSMIC_EDIT_REPO" "$COSMIC_EDIT_DIR" || { echo "Failed to clone the repository"; exit 1; }
-
-# Navigate into the cloned repository
-cd "$COSMIC_EDIT_DIR" || { echo "Failed to enter the repository directory"; exit 1; }
-
-# Set up git-lfs and fetch LFS objects
-git lfs install
-git remote add network-origin https://github.com/pop-os/cosmic-edit
-git lfs fetch --all  # Fetch all LFS objects
-git lfs pull  # Ensure all files are pulled down and available
-git lfs checkout  # Check out the actual binary files
-
-# Optional: sleep to ensure files are checked out
-sleep 5
-
-# Ensure that all LFS files were properly checked out
-git lfs ls-files
-git lfs status || { echo "git-lfs encountered an error"; exit 1; }
-
-# Extract the version and commit information
-git fetch --tags
-VERSION=$(git describe --tags $(git rev-list --tags --max-count=1))  # Get the latest tag for version
-#_commit=$(git rev-parse HEAD)
+  # Grab version info
+  git fetch --tags
+  VERSION=$(git describe --tags $(git rev-list --tags --max-count=1) 2>/dev/null || true)
 
   if [ -z "$VERSION" ]; then
-      # No tags found — use date + short commit hash instead
-      VERSION=$(git log --date=format:%Y%m%d --pretty=format:%cd.%h -n1)
-        _commit=$(git rev-parse HEAD)
+    VERSION=$(git log --date=format:%Y%m%d --pretty=format:%cd.%h -n1)
+    _commit=$(git rev-parse HEAD)
   else
-      # Strip leading 'epoch-' if present
-      VERSION=${VERSION#epoch-}
-      VERSION=$(echo "$VERSION" | sed 's/-/./g')
+    VERSION=${VERSION#epoch-}
+    VERSION=$(echo "$VERSION" | sed 's/-/./g; s/\.\././g')
   fi
 
-# Remove .git directory and .gitignore files
-rm -rf .git
-find . -name .gitignore -print0 | xargs -0 rm -f
+  # Clean up Git metadata
+  rm -rf .git
+  find . -name .gitignore -print0 | xargs -0 rm -f
 
-# Navigate back to the root directory
-cd "$ROOT_DIR" || { echo "Failed to return to the root directory"; exit 1; }
+  cd "$ROOT_DIR"
 
-# Update the SlackBuild script in the project directory for 'cosmic-wallpapers'
-SLACKBUILD="$ROOT_DIR/$COSMIC_EDIT_NAME/$COSMIC_EDIT_NAME.SlackBuild"
-if [ -f "$SLACKBUILD" ]; then
-  # Update the wget line
-  sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$COSMIC_EDIT_NAME-$VERSION.tar.xz|" "$SLACKBUILD"
-
-  # Update the VERSION and _commit lines
-  sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
-  sed -i "s/^_commit=.*/_commit=${VERSION}/" "$SLACKBUILD"
-
-  echo "Updated $SLACKBUILD with the latest version and commit."
-else
-  echo "SlackBuild script not found in $ROOT_DIR/$COSMIC_EDIT_NAME. Skipping update for $COSMIC_EDIT_NAME."
-fi
-
-# Create a tarball and move it to /opt/htdocs/distfile
-mv "$COSMIC_EDIT_DIR" "$COSMIC_EDIT_NAME-$VERSION"
-tar cvfJ "$COSMIC_EDIT_NAME-$VERSION.tar.xz" "$COSMIC_EDIT_NAME-$VERSION"
-rm -fr "$COSMIC_EDIT_NAME-$VERSION"
-mv "$COSMIC_EDIT_NAME-$VERSION.tar.xz" /opt/htdocs/linux/cosmic/tarballs/
-
-echo "The 'cosmic-edit' repository has been processed, archived, and moved to /opt/htdocs/linux/cosmic/tarballs/."
-
-# Set up variables
-COSMIC_GREETER_REPO="https://github.com/pop-os/cosmic-greeter.git"
-COSMIC_GREETER_NAME="cosmic-greeter"
-COSMIC_GREETER_DIR=$(mktemp -dt "$COSMIC_GREETER_NAME.git.XXXXXX")
-
-# Clone the repository
-git clone --depth 1 "$COSMIC_GREETER_REPO" "$COSMIC_GREETER_DIR" || { echo "Failed to clone the repository"; exit 1; }
-
-# Navigate into the cloned repository
-cd "$COSMIC_GREETER_DIR" || { echo "Failed to enter the repository directory"; exit 1; }
-
-# Set up git-lfs and fetch LFS objects
-git lfs install
-git remote add network-origin https://github.com/pop-os/cosmic-greeter
-git lfs fetch --all  # Fetch all LFS objects
-git lfs pull  # Ensure all files are pulled down and available
-git lfs checkout  # Check out the actual binary files
-
-# Optional: sleep to ensure files are checked out
-sleep 5
-
-# Ensure that all LFS files were properly checked out
-git lfs ls-files
-git lfs status || { echo "git-lfs encountered an error"; exit 1; }
-
-# Extract the version and commit information
-git fetch --tags
-VERSION=$(git describe --tags $(git rev-list --tags --max-count=1))  # Get the latest tag for version
-#_commit=$(git rev-parse HEAD)
-
-  if [ -z "$VERSION" ]; then
-      # No tags found — use date + short commit hash instead
-      VERSION=$(git log --date=format:%Y%m%d --pretty=format:%cd.%h -n1)
-        _commit=$(git rev-parse HEAD)
+  SLACKBUILD="$ROOT_DIR/$PRGNAM/$PRGNAM.SlackBuild"
+  if [ -f "$SLACKBUILD" ]; then
+    sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$PRGNAM-$VERSION.tar.xz|" "$SLACKBUILD"
+    sed -i "s|^VERSION=.*|VERSION=$VERSION|" "$SLACKBUILD"
+    sed -i "s|^_commit=.*|_commit=$VERSION|" "$SLACKBUILD"
+    echo "Updated $SLACKBUILD with latest tag $VERSION ($_commit)"
   else
-      # Strip leading 'epoch-' if present
-      VERSION=${VERSION#epoch-}
-      VERSION=$(echo "$VERSION" | sed 's/-/./g')
+    echo "SlackBuild script not found for $PRGNAM. Skipping."
   fi
-  
-# Remove .git directory and .gitignore files
-rm -rf .git
-find . -name .gitignore -print0 | xargs -0 rm -f
 
-# Navigate back to the root directory
-cd "$ROOT_DIR" || { echo "Failed to return to the root directory"; exit 1; }
+  mv "$GITDIR" "$PRGNAM-$VERSION"
+  tar cvfJ "$PRGNAM-$VERSION.tar.xz" "$PRGNAM-$VERSION"
+  rm -rf "$PRGNAM-$VERSION"
+  mv "$PRGNAM-$VERSION.tar.xz" /opt/htdocs/linux/cosmic/tarballs/
+done
 
-# Update the SlackBuild script in the project directory for 'cosmic-wallpapers'
-SLACKBUILD="$ROOT_DIR/$COSMIC_GREETER_NAME/$COSMIC_GREETER_NAME.SlackBuild"
-if [ -f "$SLACKBUILD" ]; then
-  # Update the wget line
-  sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$COSMIC_GREETER_NAME-$VERSION.tar.xz|" "$SLACKBUILD"
-
-  # Update the VERSION and _commit lines
-  sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
-  sed -i "s/^_commit=.*/_commit=${VERSION}/" "$SLACKBUILD"
-
-  echo "Updated $SLACKBUILD with the latest version and commit."
-else
-  echo "SlackBuild script not found in $ROOT_DIR/$COSMIC_GREETER_NAME. Skipping update for $COSMIC_GREETER_NAME."
-fi
-
-# Create a tarball and move it to /opt/htdocs/distfile
-mv "$COSMIC_GREETER_DIR" "$COSMIC_GREETER_NAME-$VERSION"
-tar cvfJ "$COSMIC_GREETER_NAME-$VERSION.tar.xz" "$COSMIC_GREETER_NAME-$VERSION"
-rm -fr "$COSMIC_GREETER_NAME-$VERSION"
-mv "$COSMIC_GREETER_NAME-$VERSION.tar.xz" /opt/htdocs/linux/cosmic/tarballs/
-
-echo "The 'cosmic-greeter' repository has been processed, archived, and moved to /opt/htdocs/linux/cosmic/tarballs/."
+echo "Wallpapers, Edit, Greeter, and Initial Setup have been processed and archived."
 
 echo "All projects have been processed and archives created."
 
