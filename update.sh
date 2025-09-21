@@ -346,7 +346,7 @@ else
 fi
 
 # Create a tarball and move it to /opt/htdocs/distfile
-mv "$COSMIC_GREETER_DIR" "$COSMIC_GREETER_NAME-$_commit"
+mv "$COSMIC_GREETER_DIR" "$COSMIC_GREETER_NAME-$VERSION"
 tar cvfJ "$COSMIC_GREETER_NAME-$VERSION.tar.xz" "$COSMIC_GREETER_NAME-$VERSION"
 rm -fr "$COSMIC_GREETER_NAME-$VERSION"
 mv "$COSMIC_GREETER_NAME-$VERSION.tar.xz" /opt/htdocs/linux/cosmic/tarballs/
