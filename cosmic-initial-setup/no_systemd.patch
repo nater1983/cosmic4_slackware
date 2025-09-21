@@ -1,11 +1,85 @@
 diff --git a/src/page/language.rs b/src/page/language.rs
-index 844e310..b07e45f 100644
+index 844e310..cc1500f 100644
 --- a/src/page/language.rs
 +++ b/src/page/language.rs
-@@ -202,11 +202,11 @@ impl super::Page for Page {
+@@ -6,9 +6,13 @@ use cosmic::{
+     theme, widget,
+ };
+ use eyre::Context;
+-use slotmap::{DefaultKey, Key, SlotMap};
++use slotmap::{DefaultKey, SlotMap};
+ use std::collections::{BTreeMap, BTreeSet};
+ use std::sync::Arc;
++use tokio::fs::{File, set_permissions};
++use tokio::io::AsyncWriteExt;
++use std::os::unix::fs::PermissionsExt;
++use std::path::Path;
  
+ use crate::{fl, page};
+ 
+@@ -95,7 +99,8 @@ impl Page {
+             Message::Select(selected) => {
+                 if let Some(locale) = self.available_languages.get(selected) {
+                     let lang = locale.lang_code.clone();
+-                    tokio::spawn(set_locale(lang.clone(), lang));
++                    let region = lang.clone();
++                    tokio::spawn(crate::locales::set_locale(lang, region));
+ 
+                     if let Some(config) = self.config.as_mut() {
+                         _ = config.set("system_locales", vec![locale.lang_code.clone()]);
+@@ -139,7 +144,6 @@ impl Page {
+                     return Some(id);
+                 };
+ 
+-                //TODO: better search method (fuzzy search?)
+                 if regex.is_match(&locale.display_name) {
+                     return Some(id);
+                 }
+@@ -162,84 +166,47 @@ impl super::Page for Page {
+ 
+     fn init(&mut self) -> cosmic::Task<page::Message> {
+         let refresh = async || -> eyre::Result<PageRefresh> {
+-            let conn = zbus::Connection::system()
+-                .await
+-                .wrap_err("zbus system connection error")?;
+-
+             let registry = locales_rs::Registry::new().wrap_err("failed to get locale registry")?;
+ 
+-            let system_locales: BTreeMap<String, SystemLocale> = locale1::locale1Proxy::new(&conn)
+-                .await
+-                .wrap_err("locale1 proxy connect error")?
+-                .locale()
+-                .await
+-                .wrap_err("could not get locale from locale1")?
+-                .into_iter()
+-                .filter_map(|expression| {
+-                    let mut fields = expression.split('=');
+-                    let var = fields.next()?;
+-                    let lang_code = fields.next()?;
+-                    let locale = registry.locale(lang_code)?;
+-
+-                    Some((
+-                        var.to_owned(),
+-                        localized_locale(&locale, lang_code.to_owned()),
+-                    ))
+-                })
+-                .collect();
+-
+-            let config = cosmic::cosmic_config::Config::new("com.system76.CosmicSettings", 1).ok();
+-
+-            let language = system_locales
+-                .get("LC_ALL")
+-                .or_else(|| system_locales.get("LANG"))
+-                .cloned();
+-
+-            let region = system_locales
+-                .get("LC_TIME")
+-                .or_else(|| system_locales.get("LANG"))
+-                .cloned();
+-
++            // Collect system locales
              let mut available_languages_set = BTreeSet::new();
- 
+-
 -            let output = tokio::process::Command::new("localectl")
 -                .arg("list-locales")
 +            let output = tokio::process::Command::new("locale")
@@ -13,11 +87,143 @@ index 844e310..b07e45f 100644
                  .output()
                  .await
 -                .expect("Failed to run localectl");
-+                .expect("Failed to run locale");
++                .wrap_err("failed to run locale -a")?;
++            let output = String::from_utf8(output.stdout).unwrap_or_default();
++
++            for line in output.lines() {
++                if line == "C" || line == "POSIX" {
++                    continue;
++                }
++                if let Some(locale) = registry.locale(line) {
++                    available_languages_set.insert(localized_locale(&locale, line.to_owned()));
++                }
++            }
  
              let mut available_languages = SlotMap::new();
              let mut selected = DefaultKey::null();
-@@ -319,23 +319,38 @@ impl super::Page for Page {
+ 
+             let current_lang = std::env::var("LANG").ok();
+             if let Some(lang) = current_lang.as_ref() {
+-                if let Some(locale) = registry.locale(&lang) {
++                if let Some(locale) = registry.locale(lang) {
+                     selected = available_languages.insert(localized_locale(&locale, lang.clone()));
+                 }
+             }
+ 
+-            let output = String::from_utf8(output.stdout).unwrap_or_default();
+-            for line in output.lines() {
+-                if line == "C.UTF-8" || Some(line) == current_lang.as_deref() {
+-                    continue;
+-                }
+-
+-                if let Some(locale) = registry.locale(line) {
+-                    available_languages_set.insert(localized_locale(&locale, line.to_owned()));
+-                }
+-            }
+-
+             for language in available_languages_set {
+                 available_languages.insert(language);
+             }
+ 
+             Ok(PageRefresh {
+-                config,
++                config: cosmic::cosmic_config::Config::new("com.system76.CosmicSettings", 1).ok(),
+                 registry: Registry(registry),
+-                language,
+-                region,
++                language: current_lang.clone().and_then(|l| registry.locale(&l)).map(|l| localized_locale(&l, l.lang_code.clone())),
++                region: current_lang.clone().and_then(|l| registry.locale(&l)).map(|l| localized_locale(&l, l.lang_code.clone())),
+                 available_languages,
+-                system_locales,
++                system_locales: BTreeMap::new(),
+                 selected,
+             })
+         };
+@@ -248,7 +215,7 @@ impl super::Page for Page {
+     }
+ 
+     fn open(&mut self) -> cosmic::Task<page::Message> {
+-        return widget::text_input::focus(self.search_id.clone());
++        widget::text_input::focus(self.search_id.clone())
+     }
+ 
+     fn completed(&self) -> bool {
+@@ -256,43 +223,33 @@ impl super::Page for Page {
+     }
+ 
+     fn view(&self) -> Element<'_, page::Message> {
+-        let cosmic_theme::Spacing {
+-            space_xxs, space_m, ..
+-        } = theme::active().cosmic().spacing;
++        let cosmic_theme::Spacing { space_xxs, space_m, .. } = theme::active().cosmic().spacing;
+ 
+         let mut section = widget::settings::section();
+-
+         let mut first_opt = None;
+-        for (id, locale) in self.active_context.iter().filter_map(|id| {
+-            self.available_languages
+-                .get(*id)
+-                .map(|locale| (*id, locale))
+-        }) {
+-            let item = widget::settings::item::builder(&locale.display_name);
+ 
++        for (id, locale) in self.active_context.iter().filter_map(|id| self.available_languages.get(*id).map(|l| (*id, l))) {
++            let item = widget::settings::item::builder(&locale.display_name);
+             let selected = id == self.selected;
++
+             section = section.add(
+-                //TODO: properly style this
+                 widget::button::custom(
+                     item.control(
+-                        widget::row::with_children(vec![if selected {
+-                            widget::icon::from_name("object-select-symbolic")
+-                                .size(16)
+-                                .into()
+-                        } else {
+-                            widget::Space::with_width(16).into()
+-                        }])
++                        widget::row::with_children(vec![
++                            if selected {
++                                widget::icon::from_name("object-select-symbolic").size(16).into()
++                            } else {
++                                widget::Space::with_width(16).into()
++                            }
++                        ])
+                         .align_y(Alignment::Center)
+                         .spacing(space_xxs),
+                     ),
+                 )
+                 .on_press(Message::Select(id.clone()))
+-                .class(if selected {
+-                    theme::Button::Link
+-                } else {
+-                    theme::Button::MenuRoot
+-                }),
++                .class(if selected { theme::Button::Link } else { theme::Button::MenuRoot }),
+             );
++
+             if first_opt.is_none() {
+                 first_opt = Some(id);
+             }
+@@ -304,45 +261,52 @@ impl super::Page for Page {
+ 
+         if let Some(first) = first_opt {
+             if self.regex_opt.is_some() {
+-                // Select first item if no item is selected and there is a search
+                 search_input = search_input.on_submit(move |_| Message::Select(first.clone()));
+             }
+         }
+ 
+-        let element: Element<_> = widget::column::with_children(vec![
++        widget::column::with_children(vec![
+             search_input.into(),
+             widget::Space::with_height(space_m).into(),
+             widget::scrollable(section).into(),
+-        ])
+-        .into();
+-        element.map(page::Message::Language)
++        ]).into()
++         .map(page::Message::Language)
      }
  }
  
@@ -38,15 +244,9 @@ index 844e310..b07e45f 100644
 -        ])
 -        .status()
 -        .await;
-+use tokio::fs::{File, set_permissions};
-+use tokio::io::AsyncWriteExt;
-+use std::os::unix::fs::PermissionsExt;
-+use std::path::Path;
-+
-+pub async fn set_locale(lang: &str, region: &str) -> std::io::Result<()> {
++// Slackware-compatible set_locale function
++pub async fn set_locale(lang: String, region: String) -> std::io::Result<()> {
 +    let path = Path::new("/etc/profile.d/lang.sh");
-+
-+    // Write LANG and all LC_* variables
 +    let mut file = File::create(path).await?;
 +
 +    let content = format!(
@@ -66,10 +266,46 @@ index 844e310..b07e45f 100644
 +
 +    file.write_all(content.as_bytes()).await?;
 +
-+    // Ensure permissions are 0755
++    // Set permissions to 0755
 +    set_permissions(path, std::fs::Permissions::from_mode(0o755)).await?;
 +
 +    Ok(())
  }
  
++// --- locale helpers ---
  fn localized_iso_codes(locale: &locales_rs::Locale) -> (String, String) {
+     let mut language = gettextrs::dgettext("iso_639", &locale.language.display_name);
+     let country = gettextrs::dgettext("iso_3166", &locale.territory.display_name);
+ 
+-    // Ensure language is title-cased.
+     let mut chars = language.chars();
+     if let Some(c) = chars.next() {
+         language = c.to_uppercase().collect::<String>() + chars.as_str();
+@@ -353,7 +317,6 @@ fn localized_iso_codes(locale: &locales_rs::Locale) -> (String, String) {
+ 
+ fn localized_locale(locale: &locales_rs::Locale, lang_code: String) -> SystemLocale {
+     let (language, country) = localized_iso_codes(locale);
+-
+     SystemLocale {
+         lang_code,
+         display_name: format!("{language} ({country})"),
+@@ -375,19 +338,16 @@ pub struct SystemLocale {
+ }
+ 
+ impl Eq for SystemLocale {}
+-
+ impl Ord for SystemLocale {
+     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+         self.display_name.cmp(&other.display_name)
+     }
+ }
+-
+ impl PartialOrd for SystemLocale {
+     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+         self.display_name.partial_cmp(&other.display_name)
+     }
+ }
+-
+ impl PartialEq for SystemLocale {
+     fn eq(&self, other: &Self) -> bool {
+         self.display_name == other.display_name
