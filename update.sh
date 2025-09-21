@@ -100,6 +100,7 @@ for PRGNAM in "${!CORE_REPOS[@]}"; do
   else
       # Strip leading 'epoch-' if present
       VERSION=${VERSION#epoch-}
+      VERSION=$(echo "$VERSION" | sed 's/-/./g')
   fi
 
   rm -rf .git
