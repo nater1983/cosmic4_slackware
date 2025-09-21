@@ -313,6 +313,16 @@ git fetch --tags
 VERSION=$(git describe --tags $(git rev-list --tags --max-count=1))  # Get the latest tag for version
 #_commit=$(git rev-parse HEAD)
 
+  if [ -z "$VERSION" ]; then
+      # No tags found — use date + short commit hash instead
+      VERSION=$(git log --date=format:%Y%m%d --pretty=format:%cd.%h -n1)
+        _commit=$(git rev-parse HEAD)
+  else
+      # Strip leading 'epoch-' if present
+      VERSION=${VERSION#epoch-}
+      VERSION=$(echo "$VERSION" | sed 's/-/./g')
+  fi
+  
 # Remove .git directory and .gitignore files
 rm -rf .git
 find . -name .gitignore -print0 | xargs -0 rm -f
@@ -324,7 +334,7 @@ cd "$ROOT_DIR" || { echo "Failed to return to the root directory"; exit 1; }
 SLACKBUILD="$ROOT_DIR/$COSMIC_GREETER_NAME/$COSMIC_GREETER_NAME.SlackBuild"
 if [ -f "$SLACKBUILD" ]; then
   # Update the wget line
-  sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$COSMIC_GREETER_NAME-$_commit.tar.xz|" "$SLACKBUILD"
+  sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$COSMIC_GREETER_NAME-$VERSION.tar.xz|" "$SLACKBUILD"
 
   # Update the VERSION and _commit lines
   sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
@@ -337,9 +347,9 @@ fi
 
 # Create a tarball and move it to /opt/htdocs/distfile
 mv "$COSMIC_GREETER_DIR" "$COSMIC_GREETER_NAME-$_commit"
-tar cvfJ "$COSMIC_GREETER_NAME-$_commit.tar.xz" "$COSMIC_GREETER_NAME-$_commit"
-rm -fr "$COSMIC_GREETER_NAME-$_commit"
-mv "$COSMIC_GREETER_NAME-$_commit.tar.xz" /opt/htdocs/linux/cosmic/tarballs/
+tar cvfJ "$COSMIC_GREETER_NAME-$VERSION.tar.xz" "$COSMIC_GREETER_NAME-$VERSION"
+rm -fr "$COSMIC_GREETER_NAME-$VERSION"
+mv "$COSMIC_GREETER_NAME-$VERSION.tar.xz" /opt/htdocs/linux/cosmic/tarballs/
 
 echo "The 'cosmic-greeter' repository has been processed, archived, and moved to /opt/htdocs/linux/cosmic/tarballs/."
 
