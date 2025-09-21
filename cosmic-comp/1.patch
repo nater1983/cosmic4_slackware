@@ -30,13 +30,3 @@ index 4c9c4860..f5b679e6 100644
      profiling::register_thread!("Main Thread");
      #[cfg(feature = "profile-with-tracy")]
      tracy_client::Client::start();
-
-diff --git a/Cargo.toml b/Cargo.toml
-index 04c4118b..3650c200 100644
---- a/Cargo.toml
-+++ b/Cargo.toml
-@@ -127,3 +127,4 @@ cosmic-client-toolkit = { git = "https://github.com/pop-os//cosmic-protocols", b
- 
- [patch.crates-io]
- smithay = { git = "https://github.com/smithay/smithay.git", rev = "ae1faae" }
-+libdisplay-info = { git = "https://github.com/nater1983/libdisplay-info-rs.git", branch = "main" }
