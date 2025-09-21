@@ -42,7 +42,7 @@ fi
 
 TMP=${TMP:-/tmp/cosmic}
 PKG=$TMP/package-$PRGNAM
-OUTPUT=${OUTPUT:-/var/cosmic}
+OUTPUT=${OUTPUT:-/var/cache/cosmic}
 
 set -e
 rm -rf $PKG
