@@ -22,12 +22,12 @@
 #  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 #  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c https://gitlab.freedesktop.org/hadess/switcheroo-control/-/archive/2.6/switcheroo-control-2.6.tar.gz
+wget -c https://gitlab.freedesktop.org/hadess/switcheroo-control/-/archive/3.0/switcheroo-control-3.0.tar.gz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=switcheroo-control
-VERSION=${VERSION:-2.6}
+VERSION=${VERSION:-3.0}
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
@@ -74,6 +74,7 @@ cd $TMP
 rm -rf $PRGNAM-$VERSION
 tar xvf $CWD/$PRGNAM-$VERSION.tar.?z || exit 1
 cd $PRGNAM-$VERSION || exit 1
+patch -Np1 -i $CWD/no_systemd.patch
 chown -R root:root .
 find -L . \
  \( -perm 777 -o -perm 775 -o -perm 750 -o -perm 711 -o -perm 555 \
