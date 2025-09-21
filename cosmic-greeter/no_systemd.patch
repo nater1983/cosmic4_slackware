@@ -1,13 +1,3 @@
-diff --git a/cosmic-greeter-start.sh b/cosmic-greeter-start.sh
-index 2e0cbf2..f72f2e5 100644
---- a/cosmic-greeter-start.sh
-+++ b/cosmic-greeter-start.sh
-@@ -1,3 +1,3 @@
- #!/bin/sh
- rm -rf /run/cosmic-greeter/cosmic/com.system76.CosmicSettingsDaemon/v1/*
--exec cosmic-comp systemd-cat -t cosmic-greeter cosmic-greeter
-+exec cosmic-comp cosmic-greeter
-
 diff --git a/cosmic-greeter.toml b/cosmic-greeter.toml
 index 62072f4..596cba8 100644
 --- a/cosmic-greeter.toml
