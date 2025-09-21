@@ -1,0 +1,54 @@
+
+diff --git a/data/switcheroo-control.service.in b/data/switcheroo-control.service.in
+index 9bb6939..159a907 100644
+--- a/data/switcheroo-control.service.in
++++ b/data/switcheroo-control.service.in
+@@ -1,21 +1,10 @@
+-[Unit]
+-Description=Switcheroo Control Proxy service
+-Before=multi-user.target display-manager.service alsa-restore.service alsa-state.service
+-
+-[Service]
+-Type=dbus
+-BusName=net.hadess.SwitcherooControl
+-ExecStart=@libexecdir@/switcheroo-control
+-
+-# Lockdown
+-ProtectSystem=strict
+-ProtectControlGroups=true
+-ProtectHome=true
+-ProtectKernelModules=true
+-PrivateTmp=true
+-RestrictAddressFamilies=AF_UNIX AF_LOCAL AF_NETLINK
+-MemoryDenyWriteExecute=true
+-RestrictRealtime=true
+-
+-[Install]
+-WantedBy=graphical.target
++#  SPDX-License-Identifier: GPL-3.0-or-later
++#
++# This program is free software; you can redistribute it and/or modify it
++# under the terms of the GNU General Public License version 3 as published by
++# the Free Software Foundation.
++ 
++[D-BUS Service]
++Name=net.hadess.SwitcherooControl
++Exec=@libexecdir@/switcheroo-control &
++User=root
+
+diff --git a/data/meson.build b/data/meson.build
+index 38cf96c..2119653 100644
+--- a/data/meson.build
++++ b/data/meson.build
+@@ -3,9 +3,9 @@ data_conf.set('libexecdir', libexecdir)
+ 
+ configure_file(
+   input: 'switcheroo-control.service.in',
+-  output: 'switcheroo-control.service',
++  output: 'net.hadess.SwitcherooControl.service',
+   configuration: data_conf,
+-  install_dir: systemd_systemunitdir,
++  install_dir: datadir / 'dbus-1/system-services',
+ )
+ 
+ install_data(
