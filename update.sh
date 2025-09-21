@@ -89,12 +89,10 @@ for PRGNAM in "${!CORE_REPOS[@]}"; do
   cd "$GITDIR"
 
   git fetch --tags
-VERSION=$(git describe --tags $(git rev-list --tags --max-count=1))
+  VERSION=$(git describe --tags $(git rev-list --tags --max-count=1))
 
-# Strip leading 'epoch-' if present
-VERSION=${VERSION#epoch-}
-
-_commit=$(git rev-parse HEAD)
+  # Strip leading 'epoch-' if present
+  VERSION=${VERSION#epoch-}
 
   rm -rf .git
   find . -name .gitignore -print0 | xargs -0 rm -f
@@ -104,7 +102,7 @@ _commit=$(git rev-parse HEAD)
   SLACKBUILD="$ROOT_DIR/$PRGNAM/$PRGNAM.SlackBuild"
   if [ -f "$SLACKBUILD" ]; then
     sed -i "s|^wget -c .*|wget -c https://github.com/pop-os/$REPO_NAME/archive/$VERSION/$TAR_PRGNAM-$VERSION.tar.gz|" "$SLACKBUILD"
-    sed -i "s/^VERSION=.*/VERSION=/" "$SLACKBUILD"
+    sed -i "s/^VERSION=.*/VERSION=TAG/" "$SLACKBUILD"
     sed -i "s/^_commit=.*/_commit=${VERSION}/" "$SLACKBUILD"
     echo "Updated $SLACKBUILD with latest tag $VERSION"
   else
