@@ -309,8 +309,9 @@ git lfs ls-files
 git lfs status || { echo "git-lfs encountered an error"; exit 1; }
 
 # Extract the version and commit information
-VERSION=$(git log --date=format:%Y%m%d --pretty=format:%cd.%h -n1)
-_commit=$(git rev-parse HEAD)
+git fetch --tags
+VERSION=$(git describe --tags $(git rev-list --tags --max-count=1))  # Get the latest tag for version
+#_commit=$(git rev-parse HEAD)
 
 # Remove .git directory and .gitignore files
 rm -rf .git
@@ -327,7 +328,7 @@ if [ -f "$SLACKBUILD" ]; then
 
   # Update the VERSION and _commit lines
   sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
-  sed -i "s/^_commit=.*/_commit=${_commit}/" "$SLACKBUILD"
+  sed -i "s/^_commit=.*/_commit=${VERSION}/" "$SLACKBUILD"
 
   echo "Updated $SLACKBUILD with the latest version and commit."
 else
