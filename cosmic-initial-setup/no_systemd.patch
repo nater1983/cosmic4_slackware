@@ -1,0 +1,19 @@
+diff --git a/src/page/language.rs b/src/page/language.rs
+index 844e310..b07e45f 100644
+--- a/src/page/language.rs
++++ b/src/page/language.rs
+@@ -202,11 +202,11 @@ impl super::Page for Page {
+ 
+             let mut available_languages_set = BTreeSet::new();
+ 
+-            let output = tokio::process::Command::new("localectl")
+-                .arg("list-locales")
++            let output = tokio::process::Command::new("locale")
++                .arg("-a")
+                 .output()
+                 .await
+-                .expect("Failed to run localectl");
++                .expect("Failed to run locale");
+ 
+             let mut available_languages = SlotMap::new();
+             let mut selected = DefaultKey::null();
