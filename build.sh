@@ -1,20 +1,24 @@
 #!/bin/bash
+set -euo pipefail
 
-echo "Building the Cosmic Desktop Environment on Slackware:"
+# Log everything to /var/log/cosmic-build.log
+LOGFILE="/var/log/cosmic-build.log"
+exec > >(tee -a "$LOGFILE") 2>&1
+
+echo "===== Building the Cosmic Desktop Environment on Slackware ====="
+
+# Ensure required commands are available
+for cmd in bash upgradepkg rm ls mkdir; do
+    if ! command -v "$cmd" &>/dev/null; then
+        echo "Error: $cmd is required but not installed."
+        exit 1
+    fi
+done
 
 # Ensure /var/cache/cosmic exists
-if [ ! -d /var/cache/cosmic ]; then
-  echo "Directory /var/cache/cosmic does not exist. Creating it..."
-  mkdir -p /var/cache/cosmic
-  if [ $? -ne 0 ]; then
-    echo "Failed to create /var/cache/cosmic"
-    exit 1
-  fi
-else
-  echo "Directory /var/cache/cosmic already exists."
-fi
+mkdir -p /var/cache/cosmic
 
-# Array of directories
+# Array of directories/packages to build
 directories=(
   "just"
   "switcheroo-control"
@@ -48,36 +52,85 @@ directories=(
   "sddm-sugar-candy"
 )
 
-# Iterate through each directory, build, and install the packages
-for dir in "${directories[@]}"; do
-  echo "Building in $dir ..."
-  cd "$dir" || { echo "Failed to change to directory $dir"; exit 1; }
-  
-  # Run the specific .SlackBuild script for the directory
-  sh "${dir}.SlackBuild"
-  if [ $? -ne 0 ]; then
-    echo "Build failed in $dir"
-    exit 1
-  fi
+total=${#directories[@]}  # total number of packages
 
-  # Print contents of the cache directory for debugging
-  echo "Contents of /var/cache/cosmic/:"
-  ls -l /var/cache/cosmic/
+# Build and install each package with loop counter
+for i in "${!directories[@]}"; do
+    dir="${directories[$i]}"
+    count=$((i+1))
+    
+    echo "===== [$count/$total] Processing package: $dir ====="
 
-  # Install the package corresponding to the directory
-  package_file=$(ls /var/cache/cosmic/${dir}-*.t?z 2>/dev/null | grep -E "^/var/cache/cosmic/${dir}-[^-]+.t?z$")
-  if [ -n "$package_file" ]; then
-    upgradepkg --reinstall --install-new "$package_file"
-    if [ $? -ne 0 ]; then
-      echo "Package installation failed for $package_file"
-      exit 1
+    if [ ! -d "$dir" ]; then
+        echo "Error: Directory $dir does not exist."
+        exit 1
     fi
-  else
-    echo "No package file found for $dir"
-    exit 1
-  fi
-  
-  cd ..
+
+    cd "$dir"
+
+    slackbuild_script="${dir}.SlackBuild"
+    if [ ! -x "$slackbuild_script" ]; then
+        echo "Error: SlackBuild script $slackbuild_script not found or not executable."
+        exit 1
+    fi
+
+    # Find all packages in /var/cache/cosmic for this directory
+    cached_packages=(/var/cache/cosmic/${dir}-*.t?z)
+    if [ ${#cached_packages[@]} -gt 0 ]; then
+        latest_package="${cached_packages[-1]}"
+    else
+        latest_package=""
+    fi
+
+    # Check if the package is already installed
+    installed=$(ls /var/log/packages/${dir}-* 2>/dev/null || true)
+    
+    rebuild=false
+    if [ -z "$installed" ]; then
+        echo "Package $dir is not installed. Will build."
+        rebuild=true
+    elif [ -n "$latest_package" ]; then
+        installed_name=$(basename "$installed")
+        latest_name=$(basename "$latest_package")
+        if [ "$installed_name" != "$latest_name" ]; then
+            echo "A newer package exists in cache: $latest_name. Will rebuild."
+            rebuild=true
+        else
+            echo "Package $dir already installed and up-to-date. Skipping."
+        fi
+    else
+        echo "Package $dir installed, but no cached package exists. Will rebuild."
+        rebuild=true
+    fi
+
+    if [ "$rebuild" = true ]; then
+        echo "Running $slackbuild_script..."
+        bash "$slackbuild_script"
+
+        echo "Contents of /var/cache/cosmic/ after build:"
+        ls -l /var/cache/cosmic/
+
+        # Find newly created package
+        package_file=(/var/cache/cosmic/${dir}-*.t?z)
+        if [ ${#package_file[@]} -eq 0 ]; then
+            echo "Error: No package file found for $dir after build."
+            exit 1
+        fi
+
+        # Keep only the newest package
+        sorted_packages=($(ls -1 /var/cache/cosmic/${dir}-*.t?z | sort))
+        latest_pkg="${sorted_packages[-1]}"
+        echo "Installing package: $latest_pkg"
+        upgradepkg --reinstall --install-new "$latest_pkg"
+
+        # Remove older packages to save space
+        for old_pkg in "${sorted_packages[@]:0:${#sorted_packages[@]}-1}"; do
+            echo "Removing old cached package: $old_pkg"
+            rm -f "$old_pkg"
+        done
+    fi
+
+    cd ..
 done
 
-echo "Cosmic Desktop Environment build and installation completed successfully."
+echo "===== Cosmic Desktop Environment build and installation completed successfully ====="
