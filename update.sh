@@ -4,7 +4,6 @@
 declare -A repos=(
   ["cosmic-idle"]="cosmic-idle"
   ["cosmic-reader"]="cosmic-reader"
-  ["launcher"]="launcher" 
   ["pop-gtk-theme"]="gtk-theme" 
   ["pop-icon-theme"]="icon-theme"  
   ["system76-fonts"]="fonts"
@@ -77,6 +76,7 @@ declare -A CORE_REPOS=(
   ["cosmic-term"]="cosmic-term"
   ["cosmic-store"]="cosmic-store"
   ["cosmic-workspaces-epoch"]="cosmic-workspaces-epoch"
+  ["launcher"]="launcher"
   ["xdg-desktop-portal-cosmic"]="xdg-desktop-portal-cosmic"
 
 )
