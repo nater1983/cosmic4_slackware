@@ -40,7 +40,8 @@ for PRGNAM in "${!repos[@]}"; do
 
   SLACKBUILD="$ROOT_DIR/$PRGNAM/$PRGNAM.SlackBuild"
   if [ -f "$SLACKBUILD" ]; then
-    sed -i "s|^wget -c .*|wget -c $GITHUB_BASE_URL/$REPO_NAME/archive/$_commit/$REPO_NAME-$_commit.tar.gz|" "$SLACKBUILD"
+    #sed -i "s|^wget -c .*|wget -c $GITHUB_BASE_URL/$REPO_NAME/archive/$_commit/$REPO_NAME-$_commit.tar.gz|" "$SLACKBUILD"
+    sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$REPO_NAME-$_commit.tar.xz|" "$SLACKBUILD"
     sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
     sed -i "s/^_commit=.*/_commit=${_commit}/" "$SLACKBUILD"
     echo "Updated $SLACKBUILD with the latest version and commit."
@@ -137,7 +138,8 @@ git clone --depth 1 "$JUST_REPO" "$JUST_DIR"
 cd "$JUST_DIR"
 git fetch --tags
 VERSION=$(git describe --tags $(git rev-list --tags --max-count=1))  # Get the latest tag for version
-TARBALL_URL="https://github.com/casey/just/archive/$VERSION/just-$VERSION.tar.gz"
+#TARBALL_URL="https://github.com/casey/just/archive/$VERSION/just-$VERSION.tar.gz"
+TARBALL_URL="https://reddoglinux.ddns.net/linux/cosmic/tarballs/just-$VERSION.tar.gz"
 
 # Remove .git directory and .gitignore files
 rm -rf .git
