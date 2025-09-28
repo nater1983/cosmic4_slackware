@@ -41,9 +41,9 @@ for PRGNAM in "${!repos[@]}"; do
   SLACKBUILD="$ROOT_DIR/$PRGNAM/$PRGNAM.SlackBuild"
   if [ -f "$SLACKBUILD" ]; then
     #sed -i "s|^wget -c .*|wget -c $GITHUB_BASE_URL/$REPO_NAME/archive/$_commit/$REPO_NAME-$_commit.tar.gz|" "$SLACKBUILD"
-    sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$REPO_NAME-$_commit.tar.xz|" "$SLACKBUILD"
+    sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$REPO_NAME-$VERSION.tar.xz|" "$SLACKBUILD"
     sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
-    sed -i "s/^_commit=.*/_commit=${_commit}/" "$SLACKBUILD"
+    sed -i "s/^_commit=.*/_commit=${VERSION}/" "$SLACKBUILD"
     echo "Updated $SLACKBUILD with the latest version and commit."
   else
     echo "SlackBuild script not found in $ROOT_DIR/$PRGNAM. Skipping update for $PRGNAM."
