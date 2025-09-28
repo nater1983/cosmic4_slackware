@@ -22,13 +22,13 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c https://github.com/pop-os/cosmic-idle/archive/267bb837f127eb805a17250ebcad02db57eb72cb/cosmic-idle-267bb837f127eb805a17250ebcad02db57eb72cb.tar.gz
+wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/cosmic-idle-20250225.267bb83.tar.xz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=cosmic-idle
 VERSION=20250225.267bb83
-_commit=267bb837f127eb805a17250ebcad02db57eb72cb
+_commit=20250225.267bb83
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
