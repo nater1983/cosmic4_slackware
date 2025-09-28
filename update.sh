@@ -51,6 +51,7 @@ for PRGNAM in "${!repos[@]}"; do
   mv "$GITDIR" "$PRGNAM-$VERSION"
   tar cvfJ "$PRGNAM-$VERSION.tar.xz" "$PRGNAM-$VERSION"
   rm -rf "$PRGNAM-$VERSION"
+  mv "$PRGNAM-$VERSION.tar.xz" /opt/htdocs/linux/cosmic/tarballs/
 done
 
 # -------------------------------
@@ -162,6 +163,7 @@ fi
 mv "$JUST_DIR" "$JUST_REPO_NAME-$VERSION"
 tar cvfJ "$JUST_REPO_NAME-$VERSION.tar.xz" "$JUST_REPO_NAME-$VERSION"
 rm -rf "$JUST_REPO_NAME-$VERSION"
+mv $JUST_REPO_NAME-$VERSION.tar.xz /opt/htdocs/linux/cosmic/tarballs/
 
 echo "The 'just' repository has been processed, archived as $JUST_REPO_NAME-$VERSION.tar.xz, and cleaned up."
 
