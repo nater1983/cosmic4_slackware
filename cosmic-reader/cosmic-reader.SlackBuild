@@ -85,10 +85,10 @@ find -L . \
 export VERGEN_GIT_COMMIT_DATE="$(date --utc '+%Y-%m-%d %H:%M:%S %z')"
 export VERGEN_GIT_SHA=$_commit
 export RUSTUP_TOOLCHAIN=stable
-cargo fetch --locked
-RUSTFLAGS+=" -C link-arg=-fuse-ld=lld"
-cargo build --release
-install -Dm 755 target/release/cosmic-reader -t "$PKG/usr/bin"
+cargo fetch
+RUSTFLAGS+=" -C link-arg=-fuse-ld=mold"
+just build-release --frozen
+just rootdir=$PKG install
 
 find $PKG -print0 | xargs -0 file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null || true
