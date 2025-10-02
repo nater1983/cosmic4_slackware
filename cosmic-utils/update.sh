@@ -2,7 +2,7 @@
 
 # Array of project names and corresponding GitHub repository names
 declare -A repos=(
-  ["calendar"]="cosmic-calendar"
+  ["cosmic-calendar"]="calendar"
   ["cosmic-reader"]="cosmic-reader"
   ["pop-gtk-theme"]="gtk-theme" 
   ["pop-icon-theme"]="icon-theme"  
