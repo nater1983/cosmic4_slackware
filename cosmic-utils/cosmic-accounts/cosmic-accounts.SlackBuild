@@ -27,6 +27,7 @@ wget -c https://github.com/cosmic-utils/accounts/archive/eca21c7912041538748a46f
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=cosmic-accounts
+NAME=accounts
 VERSION=20250930.eca21c7
 _commit=eca21c7912041538748a46f54f322511d87030f1
 TAG=_cosmic
@@ -77,9 +78,9 @@ set -e
 rm -rf $PKG
 mkdir -p $TMP $PKG
 cd $TMP
-rm -rf $PRGNAM-$_commit
-tar xvf $CWD/$PRGNAM-$_commit.tar.?z || exit 1
-cd $PRGNAM-$_commit || exit 1
+rm -rf $NAME-$_commit
+tar xvf $CWD/$NAME-$_commit.tar.?z || exit 1
+cd $NAME-$_commit || exit 1
 sed -i 's/lto = "fat"/lto = "thin"/g' Cargo.toml
 chown -R root:root .
 find -L . \
