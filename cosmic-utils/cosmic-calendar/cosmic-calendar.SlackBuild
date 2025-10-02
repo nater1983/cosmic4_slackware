@@ -27,6 +27,7 @@ wget -c https://github.com/cosmic-utils/calendar/archive/96e2ce1d87254a73b6ac0ef
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=cosmic-calendar
+NAME=calendar
 VERSION=20250930.96e2ce1
 _commit=96e2ce1d87254a73b6ac0eff99c80daaf66e78b7
 TAG=_cosmic
@@ -77,9 +78,9 @@ set -e
 rm -rf $PKG
 mkdir -p $TMP $PKG
 cd $TMP
-rm -rf $PRGNAM-$_commit
-tar xvf $CWD/$PRGNAM-$_commit.tar.?z || exit 1
-cd $PRGNAM-$_commit || exit 1
+rm -rf $NAME-$_commit
+tar xvf $CWD/$NAME-$_commit.tar.?z || exit 1
+cd $NAME-$_commit || exit 1
 sed -i 's/lto = "fat"/lto = "thin"/g' Cargo.toml
 chown -R root:root .
 find -L . \
