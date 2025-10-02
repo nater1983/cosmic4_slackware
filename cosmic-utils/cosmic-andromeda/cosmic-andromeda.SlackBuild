@@ -27,6 +27,7 @@ wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/cosmic-applets-1.0.0.
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=cosmic-andromeda
+NAME=andromeda
 VERSION=1.0.0.beta.1
 _commit=1.0.0.beta.1
 TAG=_cosmic
@@ -77,9 +78,9 @@ set -e
 rm -rf $PKG
 mkdir -p $TMP $PKG
 cd $TMP
-rm -rf $PRGNAM-$_commit
-tar xvf $CWD/$PRGNAM-$_commit.tar.?z || exit 1
-cd $PRGNAM-$_commit || exit 1
+rm -rf $NAME-$_commit
+tar xvf $CWD/$NAME-$_commit.tar.?z || exit 1
+cd $NAME-$_commit || exit 1
 sed -i 's/lto = "fat"/lto = "thin"/g' Cargo.toml
 chown -R root:root .
 find -L . \
