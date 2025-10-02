@@ -2,11 +2,11 @@
 
 # Array of project names and corresponding GitHub repository names
 declare -A repos=(
+  ["cosmic-accounts"]="accounts"
+  ["cosmic-andromeda"]="andromeda"
   ["cosmic-calendar"]="calendar"
   ["cosmic-forecast"]="forecast"
-  ["cosmic-accounts"]="accounts" 
-  ["examine"]="examine"  
-  #["system76-fonts"]="fonts"
+  ["examine"]="examine"
   #["system76-power"]="system76-power"
 )
 
