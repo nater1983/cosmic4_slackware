@@ -22,13 +22,13 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/cosmic-applets-1.0.0.beta.1.tar.xz
+wget -c https://github.com/cosmic-utils/forecast/archive/123b68cb2dbe8f22ecd287bc95a3cb3d84c10783/forecast-123b68cb2dbe8f22ecd287bc95a3cb3d84c10783.tar.gz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=cosmic-forecast
-VERSION=1.0.0.beta.1
-_commit=1.0.0.beta.1
+VERSION=20251001.123b68c
+_commit=123b68cb2dbe8f22ecd287bc95a3cb3d84c10783
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
