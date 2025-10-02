@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Slackware build script for calendar
+# Slackware build script for cosmic-calendar
 
 # Copyright 2025 Nathaniel Russell <naterussell83@gmail.com>
 # All rights reserved.
@@ -26,7 +26,7 @@ wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/cosmic-applets-1.0.0.
 
 cd $(dirname $0) ; CWD=$(pwd)
 
-PRGNAM=calendar
+PRGNAM=cosmic-calendar
 VERSION=1.0.0.beta.1
 _commit=1.0.0.beta.1
 TAG=_cosmic
