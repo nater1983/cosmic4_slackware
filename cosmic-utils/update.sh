@@ -4,7 +4,7 @@
 declare -A repos=(
   ["cosmic-calendar"]="calendar"
   ["cosmic-forecast"]="forecast"
-  ["cosmic-tweaks"]="tweaks" 
+  #["cosmic-tweaks"]="tweaks" 
   #["pop-icon-theme"]="icon-theme"  
   #["system76-fonts"]="fonts"
   #["system76-power"]="system76-power"
@@ -53,6 +53,77 @@ for PRGNAM in "${!repos[@]}"; do
   tar cvfJ "$PRGNAM-$VERSION.tar.xz" "$PRGNAM-$VERSION"
   rm -rf "$PRGNAM-$VERSION"
   #mv "$PRGNAM-$VERSION.tar.xz" /opt/htdocs/linux/cosmic/tarballs/
+done
+
+# -------------------------------
+# Cosmic-Utils : use Git tags for VERSION
+# -------------------------------
+declare -A CORE_REPOS=(
+  ["cosmic-tweaks"]="tweaks"
+  #["cosmic-applibrary"]="cosmic-applibrary"
+  #["cosmic-bg"]="cosmic-bg"
+  #["cosmic-comp"]="cosmic-comp"
+  #["cosmic-files"]="cosmic-files"
+  #["cosmic-icons"]="cosmic-icons"
+  #["cosmic-launcher"]="cosmic-launcher"
+  #["cosmic-notifications"]="cosmic-notifications"
+  #["cosmic-osd"]="cosmic-osd"
+  #["cosmic-panel"]="cosmic-panel"
+  #["cosmic-player"]="cosmic-player"
+  #["cosmic-randr"]="cosmic-randr"
+  #["cosmic-screenshot"]="cosmic-screenshot"
+  #["cosmic-session"]="cosmic-session"
+  #["cosmic-settings-daemon"]="cosmic-settings-daemon"
+  #["cosmic-settings"]="cosmic-settings"
+  #["cosmic-term"]="cosmic-term"
+  #["cosmic-store"]="cosmic-store"
+  #["cosmic-workspaces-epoch"]="cosmic-workspaces-epoch"
+  #["launcher"]="launcher"
+  #["xdg-desktop-portal-cosmic"]="xdg-desktop-portal-cosmic"
+
+)
+
+for PRGNAM in "${!CORE_REPOS[@]}"; do
+  REPO_NAME=${CORE_REPOS[$PRGNAM]}
+  GITDIR=$(mktemp -dt "$PRGNAM.git.XXXXXX")
+
+  git clone --depth 1 "https://github.com/pop-os/$REPO_NAME.git" "$GITDIR"
+  cd "$GITDIR"
+
+  git fetch --tags
+
+  # Try to get the latest tag
+  VERSION=$(git describe --tags $(git rev-list --tags --max-count=1) 2>/dev/null || true)
+
+  if [ -z "$VERSION" ]; then
+      # No tags found — use date + short commit hash instead
+      VERSION=$(git log --date=format:%Y%m%d --pretty=format:%cd.%h -n1)
+        _commit=$(git rev-parse HEAD)
+  else
+      # Strip leading 'epoch-' if present
+      VERSION=${VERSION#epoch-}
+      VERSION=$(echo "$VERSION" | sed 's/-/./g')
+  fi
+
+  rm -rf .git
+  find . -name .gitignore -print0 | xargs -0 rm -f
+
+  cd "$ROOT_DIR"
+
+  SLACKBUILD="$ROOT_DIR/$PRGNAM/$PRGNAM.SlackBuild"
+  if [ -f "$SLACKBUILD" ]; then
+    sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$PRGNAM-$VERSION.tar.xz|" "$SLACKBUILD"
+    sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
+    sed -i "s/^_commit=.*/_commit=${VERSION}/" "$SLACKBUILD"
+    echo "Updated $SLACKBUILD with latest tag $VERSION"
+  else
+    echo "SlackBuild script not found for $PRGNAM. Skipping."
+  fi
+
+  mv "$GITDIR" "$PRGNAM-$VERSION"
+  tar cvfJ "$PRGNAM-$VERSION.tar.xz" "$PRGNAM-$VERSION"
+  rm -rf "$PRGNAM-$VERSION"
+  mv "$PRGNAM-$VERSION.tar.xz" /opt/htdocs/linux/cosmic/tarballs/
 done
 
 echo "All projects have been processed and archives created."
