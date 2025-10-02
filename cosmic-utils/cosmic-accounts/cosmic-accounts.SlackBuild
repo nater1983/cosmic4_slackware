@@ -90,7 +90,7 @@ find -L . \
   -o -perm 440 -o -perm 400 \) -exec chmod 644 {} \;
 
 export RUSTUP_TOOLCHAIN=stable
-cargo fetch --locked
+cargo fetch
 RUSTFLAGS+=" -C link-arg=-fuse-ld=mold"
 just build-release --frozen
 just rootdir=$PKG install
