@@ -5,15 +5,15 @@
 # You must make exactly 11 lines for the formatting to be correct.  It's also
 # customary to leave one space after the ':' except on otherwise blank lines.
 
-        |-----handy-ruler------------------------------------------------------|
-calendar: calendar (Cosmic Ext Calendar)
-calendar:
-calendar: A calendar application for the COSMIC desktop 
-calendar:
-calendar: Homepage: https://github.com/cosmic-utils/calendar
-calendar:
-calendar:
-calendar:
-calendar:
-calendar:
-calendar:
+               |-----handy-ruler------------------------------------------------------|
+cosmic-calendar: cosmic-calendar (Cosmic Ext Calendar)
+cosmic-calendar:
+cosmic-calendar A calendar application for the COSMIC desktop 
+cosmic-calendar
+cosmic-calendar Homepage: https://github.com/cosmic-utils/calendar
+cosmic-calendar
+cosmic-calendar
+cosmic-calendar
+cosmic-calendar
+cosmic-calendar
+cosmic-calendar
