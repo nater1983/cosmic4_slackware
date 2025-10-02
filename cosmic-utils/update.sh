@@ -5,7 +5,7 @@ declare -A repos=(
   ["cosmic-calendar"]="calendar"
   ["cosmic-forecast"]="forecast"
   ["cosmic-accounts"]="accounts" 
-  #["pop-icon-theme"]="icon-theme"  
+  ["examine"]="examine"  
   #["system76-fonts"]="fonts"
   #["system76-power"]="system76-power"
 )
