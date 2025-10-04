@@ -47,14 +47,10 @@ index 18f4444..c302d57 100644
  # Default recipe - show available commands
  default:
      @just --list
-@@ -44,19 +53,23 @@ check: test lint check-format
+@@ -44,19 +53,19 @@ check: test lint check-format
  clean:
      cargo clean
  
-+    install -Dm0755 {{ bin-src }} {{ bin-dst }}
-+    install -Dm0644 res/app.desktop {{ desktop-dst }}
-+    install -Dm0644 {{ icon-svg-src }} {{ icon-svg-dst }}
-+
  # Install daemon system-wide (requires sudo)
  install-daemon: build-daemon
 -    sudo cp target/release/accounts-daemon /usr/bin/
