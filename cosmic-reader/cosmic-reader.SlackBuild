@@ -22,13 +22,13 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/cosmic-reader-20251001.74e9ec2.tar.xz
+wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/cosmic-reader-20251002.2fa9595.tar.xz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=cosmic-reader
-VERSION=20251001.74e9ec2
-_commit=20251001.74e9ec2
+VERSION=20251002.2fa9595
+_commit=20251002.2fa9595
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
