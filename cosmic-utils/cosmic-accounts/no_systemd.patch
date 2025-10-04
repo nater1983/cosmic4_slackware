@@ -40,14 +40,14 @@ index 18f4444..c302d57 100644
 +rootdir := ''
 +prefix := '/usr'
 +base-dir := absolute_path(clean(rootdir / prefix))
-+bin-src := 'target' / 'release' / name
++etc-dst := clean(rootdir) / 'etc' / 'accounts' / 'providers'
 +bin-dst := base-dir / 'bin'
 +dbus-dst := clean(rootdir / prefix) / 'share' / 'dbus-1' / 'services'
 +
  # Default recipe - show available commands
  default:
      @just --list
-@@ -44,19 +53,19 @@ check: test lint check-format
+@@ -44,19 +53,18 @@ check: test lint check-format
  clean:
      cargo clean
  
@@ -67,8 +67,7 @@ index 18f4444..c302d57 100644
  install-configs:
 -    sudo mkdir -p /etc/accounts/providers
 -    sudo cp data/providers/*.toml /etc/accounts/providers/
-+    sudo mkdir -p (rootdir) / 'etc' / 'accounts' / 'providers'
-+    install -Dm0644 data/providers/*.toml (rootdir) / 'etc' / 'accounts' / 'providers'
++    install -Dm0644 data/providers/*.toml {{ etc-dst }}
      @echo "Remember to update OAuth2 credentials in /etc/accounts/providers/"
  
  # Install everything (requires sudo)
