@@ -1,0 +1,13 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 532f483..d47c797 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -10,7 +10,7 @@ repository = "https://github.com/cosmic-utils/calendar"
+ vergen = { version = "8", features = ["git", "gitcl"] }
+ 
+ [dependencies]
+-accounts = { path = "../accounts" }
++accounts = { "https://github.com/cosmic-utils/accounts.git" }
+ async-trait = "0.1.89"
+ futures-util = "0.3.31"
+ gcal_rs = "0.1.7"
