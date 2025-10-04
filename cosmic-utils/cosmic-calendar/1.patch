@@ -7,7 +7,7 @@ index 532f483..d47c797 100644
  
  [dependencies]
 -accounts = { path = "../accounts" }
-+accounts = { "https://github.com/cosmic-utils/accounts.git" }
++accounts = { git = "https://github.com/cosmic-utils/accounts.git" }
  async-trait = "0.1.89"
  futures-util = "0.3.31"
  gcal_rs = "0.1.7"
