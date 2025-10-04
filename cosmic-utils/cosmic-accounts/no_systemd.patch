@@ -56,7 +56,7 @@ index 18f4444..c302d57 100644
 -    sudo cp target/release/accounts-daemon /usr/bin/
 -    sudo cp data/accounts.service /usr/share/dbus-1/services/
 +    install -Dm0755 target/release/accounts-daemon {{ bin-dst }}
-+    install -Dm0644 accounts-daemon/data/cosmic-accounts.service {{ dbus-dst }}
++    install -Dm0644 accounts-daemon/data/cosmic-accounts.service {{ dbus-dst }} / 'dev.edfloreshz.Accounts.service'
  
  # Install GUI system-wide (requires sudo)
  install-gui: build-gui
