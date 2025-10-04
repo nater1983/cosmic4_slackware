@@ -41,7 +41,7 @@ index 18f4444..c302d57 100644
 +prefix := '/usr'
 +base-dir := absolute_path(clean(rootdir / prefix))
 +etc-dst := clean(rootdir) / 'etc' / 'accounts' / 'providers'
-+bin-dst := base-dir / 'bin' /
++bin-dst := base-dir / 'bin'
 +dbus-dst := clean(rootdir / prefix) / 'share' / 'dbus-1' / 'services'
 +
  # Default recipe - show available commands
