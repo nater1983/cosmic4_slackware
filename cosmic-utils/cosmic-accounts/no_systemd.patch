@@ -93,7 +93,7 @@ index 66069fd..87d463b 100644
 +desktop-dst := clean(rootdir / prefix) / 'share' / 'applications' / desktop
 +appdata := appid + '.metainfo.xml'
 +appdata-src := ui-name / 'resources' / appdata
-+appdata-dst := clean(rootdir / prefix) / 'share' / 'appdata' / appdata
++appdata-dst := clean(rootdir / prefix) / 'share' / 'metainfo' / appdata
 +icons-src := ui-name / 'resources' / 'icons' / 'hicolor'
 +icons-dst := clean(rootdir / prefix) / 'share' / 'icons' / 'hicolor'
 +icon-svg-src := icons-src / 'scalable' / 'apps' / 'icon.svg'
