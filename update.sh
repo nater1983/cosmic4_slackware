@@ -41,7 +41,7 @@ for PRGNAM in "${!repos[@]}"; do
   SLACKBUILD="$ROOT_DIR/$PRGNAM/$PRGNAM.SlackBuild"
   if [ -f "$SLACKBUILD" ]; then
     #sed -i "s|^wget -c .*|wget -c $GITHUB_BASE_URL/$REPO_NAME/archive/$_commit/$REPO_NAME-$_commit.tar.gz|" "$SLACKBUILD"
-    sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$REPO_NAME-$VERSION.tar.xz|" "$SLACKBUILD"
+    sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$REPO_NAME-$VERSION.tar.lz|" "$SLACKBUILD"
     sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
     sed -i "s/^_commit=.*/_commit=${VERSION}/" "$SLACKBUILD"
     echo "Updated $SLACKBUILD with the latest version and commit."
@@ -50,9 +50,9 @@ for PRGNAM in "${!repos[@]}"; do
   fi
 
   mv "$GITDIR" "$PRGNAM-$VERSION"
-  tar cvfJ "$PRGNAM-$VERSION.tar.xz" "$PRGNAM-$VERSION"
+  tar cvf --lzip "$PRGNAM-$VERSION.tar.lz" "$PRGNAM-$VERSION"
   rm -rf "$PRGNAM-$VERSION"
-  mv "$PRGNAM-$VERSION.tar.xz" /opt/htdocs/linux/cosmic/tarballs/
+  mv "$PRGNAM-$VERSION.tar.lz" /opt/htdocs/linux/cosmic/tarballs/
 done
 
 # -------------------------------
@@ -112,7 +112,7 @@ for PRGNAM in "${!CORE_REPOS[@]}"; do
 
   SLACKBUILD="$ROOT_DIR/$PRGNAM/$PRGNAM.SlackBuild"
   if [ -f "$SLACKBUILD" ]; then
-    sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$PRGNAM-$VERSION.tar.xz|" "$SLACKBUILD"
+    sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$PRGNAM-$VERSION.tar.lz|" "$SLACKBUILD"
     sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
     sed -i "s/^_commit=.*/_commit=${VERSION}/" "$SLACKBUILD"
     echo "Updated $SLACKBUILD with latest tag $VERSION"
@@ -121,9 +121,9 @@ for PRGNAM in "${!CORE_REPOS[@]}"; do
   fi
 
   mv "$GITDIR" "$PRGNAM-$VERSION"
-  tar cvfJ "$PRGNAM-$VERSION.tar.xz" "$PRGNAM-$VERSION"
+  tar cvf --lzip "$PRGNAM-$VERSION.tar.lz" "$PRGNAM-$VERSION"
   rm -rf "$PRGNAM-$VERSION"
-  mv "$PRGNAM-$VERSION.tar.xz" /opt/htdocs/linux/cosmic/tarballs/
+  mv "$PRGNAM-$VERSION.tar.lz" /opt/htdocs/linux/cosmic/tarballs/
 done
 
 echo "All projects have been processed and archives created."
@@ -139,7 +139,7 @@ cd "$JUST_DIR"
 git fetch --tags
 VERSION=$(git describe --tags $(git rev-list --tags --max-count=1))  # Get the latest tag for version
 #TARBALL_URL="https://github.com/casey/just/archive/$VERSION/just-$VERSION.tar.gz"
-TARBALL_URL="https://reddoglinux.ddns.net/linux/cosmic/tarballs/just-$VERSION.tar.gz"
+TARBALL_URL="https://reddoglinux.ddns.net/linux/cosmic/tarballs/just-$VERSION.tar.lz"
 
 # Remove .git directory and .gitignore files
 rm -rf .git
@@ -163,9 +163,9 @@ fi
 
 # Create a tarball
 mv "$JUST_DIR" "$JUST_REPO_NAME-$VERSION"
-tar cvfJ "$JUST_REPO_NAME-$VERSION.tar.xz" "$JUST_REPO_NAME-$VERSION"
+tar cvf --lzip "$JUST_REPO_NAME-$VERSION.tar.lz" "$JUST_REPO_NAME-$VERSION"
 rm -rf "$JUST_REPO_NAME-$VERSION"
-mv $JUST_REPO_NAME-$VERSION.tar.xz /opt/htdocs/linux/cosmic/tarballs/
+mv $JUST_REPO_NAME-$VERSION.tar.lz /opt/htdocs/linux/cosmic/tarballs/
 
 echo "The 'just' repository has been processed, archived as $JUST_REPO_NAME-$VERSION.tar.xz, and cleaned up."
 
@@ -215,7 +215,7 @@ for PRGNAM in "${!EXTRA_REPOS[@]}"; do
 
   SLACKBUILD="$ROOT_DIR/$PRGNAM/$PRGNAM.SlackBuild"
   if [ -f "$SLACKBUILD" ]; then
-    sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$PRGNAM-$VERSION.tar.xz|" "$SLACKBUILD"
+    sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$PRGNAM-$VERSION.tar.lz|" "$SLACKBUILD"
     sed -i "s|^VERSION=.*|VERSION=$VERSION|" "$SLACKBUILD"
     sed -i "s|^_commit=.*|_commit=$VERSION|" "$SLACKBUILD"
     echo "Updated $SLACKBUILD with latest tag $VERSION ($_commit)"
@@ -224,9 +224,9 @@ for PRGNAM in "${!EXTRA_REPOS[@]}"; do
   fi
 
   mv "$GITDIR" "$PRGNAM-$VERSION"
-  tar cvfJ "$PRGNAM-$VERSION.tar.xz" "$PRGNAM-$VERSION"
+  tar cvf --lzip "$PRGNAM-$VERSION.tar.lz" "$PRGNAM-$VERSION"
   rm -rf "$PRGNAM-$VERSION"
-  mv "$PRGNAM-$VERSION.tar.xz" /opt/htdocs/linux/cosmic/tarballs/
+  mv "$PRGNAM-$VERSION.tar.lz" /opt/htdocs/linux/cosmic/tarballs/
 done
 
 echo "Wallpapers, Edit, Greeter, and Initial Setup have been processed and archived."
