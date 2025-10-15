@@ -22,14 +22,14 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c https://github.com/cosmic-utils/forecast/archive/e8a67baa0022c606cf53ae3772cf107c140d416f/forecast-e8a67baa0022c606cf53ae3772cf107c140d416f.tar.gz
+wget -c https://github.com/cosmic-utils/forecast/archive/f4dca2317007bc3316b22456e36a76d50500ccc8/forecast-f4dca2317007bc3316b22456e36a76d50500ccc8.tar.gz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=cosmic-forecast
 NAME=forecast
-VERSION=20251002.e8a67ba
-_commit=e8a67baa0022c606cf53ae3772cf107c140d416f
+VERSION=20251008.f4dca23
+_commit=f4dca2317007bc3316b22456e36a76d50500ccc8
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
