@@ -86,7 +86,7 @@ find -L . \
 export RUSTUP_TOOLCHAIN=stable
 cargo fetch --locked
 RUSTFLAGS+=" -C link-arg=-fuse-ld=mold"
-just build-release --frozen
+just default --frozen
 just rootdir=$PKG install
 
 rm -f $PKG/{,usr/}lib${LIBDIRSUFFIX}/*.la
