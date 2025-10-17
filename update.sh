@@ -7,7 +7,6 @@ declare -A repos=(
   ["pop-gtk-theme"]="gtk-theme" 
   ["pop-icon-theme"]="icon-theme"  
   ["system76-fonts"]="fonts"
-  ["system76-power"]="system76-power"
 )
 
 # Exit script on any error
@@ -79,6 +78,7 @@ declare -A CORE_REPOS=(
   ["cosmic-store"]="cosmic-store"
   ["cosmic-workspaces-epoch"]="cosmic-workspaces-epoch"
   ["launcher"]="launcher"
+  ["system76-power"]="system76-power"
   ["xdg-desktop-portal-cosmic"]="xdg-desktop-portal-cosmic"
 
 )
