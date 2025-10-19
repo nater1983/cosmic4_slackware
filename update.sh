@@ -163,7 +163,7 @@ fi
 
 # Create a tarball
 mv "$JUST_DIR" "$JUST_REPO_NAME-$VERSION"
-tar cvf --lzip "$JUST_REPO_NAME-$VERSION.tar.lz" "$JUST_REPO_NAME-$VERSION"
+tar --lzip -cvf "$JUST_REPO_NAME-$VERSION.tar.lz" "$JUST_REPO_NAME-$VERSION"
 rm -rf "$JUST_REPO_NAME-$VERSION"
 mv $JUST_REPO_NAME-$VERSION.tar.lz /opt/htdocs/linux/cosmic/tarballs/
 
@@ -224,7 +224,7 @@ for PRGNAM in "${!EXTRA_REPOS[@]}"; do
   fi
 
   mv "$GITDIR" "$PRGNAM-$VERSION"
-  tar cvf --lzip "$PRGNAM-$VERSION.tar.lz" "$PRGNAM-$VERSION"
+  tar --lzip -cvf "$PRGNAM-$VERSION.tar.lz" "$PRGNAM-$VERSION"
   rm -rf "$PRGNAM-$VERSION"
   mv "$PRGNAM-$VERSION.tar.lz" /opt/htdocs/linux/cosmic/tarballs/
 done
