@@ -49,7 +49,7 @@ for PRGNAM in "${!repos[@]}"; do
   fi
 
   mv "$GITDIR" "$PRGNAM-$VERSION"
-  tar cvf --lzip "$PRGNAM-$VERSION.tar.lz" "$PRGNAM-$VERSION"
+  tar --lzip -cvf "$PRGNAM-$VERSION.tar.lz" "$PRGNAM-$VERSION"
   rm -rf "$PRGNAM-$VERSION"
   mv "$PRGNAM-$VERSION.tar.lz" /opt/htdocs/linux/cosmic/tarballs/
 done
@@ -121,7 +121,7 @@ for PRGNAM in "${!CORE_REPOS[@]}"; do
   fi
 
   mv "$GITDIR" "$PRGNAM-$VERSION"
-  tar cvf --lzip "$PRGNAM-$VERSION.tar.lz" "$PRGNAM-$VERSION"
+  tar --lzip -cvf "$PRGNAM-$VERSION.tar.lz" "$PRGNAM-$VERSION"
   rm -rf "$PRGNAM-$VERSION"
   mv "$PRGNAM-$VERSION.tar.lz" /opt/htdocs/linux/cosmic/tarballs/
 done
