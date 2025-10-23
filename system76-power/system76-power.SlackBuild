@@ -22,13 +22,13 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/system76-power-20250923.2ebd0d2.tar.xz
+wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/system76-power-1.2.8.tar.lz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=system76-power
-VERSION=20250923.2ebd0d2
-_commit=20250923.2ebd0d2
+VERSION=1.2.8
+_commit=1.2.8
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
