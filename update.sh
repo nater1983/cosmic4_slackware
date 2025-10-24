@@ -2,7 +2,6 @@
 
 # Array of project names and corresponding GitHub repository names
 declare -A repos=(
-  ["cosmic-idle"]="cosmic-idle"
   ["cosmic-reader"]="cosmic-reader"
   ["pop-gtk-theme"]="gtk-theme" 
   ["pop-icon-theme"]="icon-theme"  
@@ -64,6 +63,7 @@ declare -A CORE_REPOS=(
   ["cosmic-comp"]="cosmic-comp"
   ["cosmic-files"]="cosmic-files"
   ["cosmic-icons"]="cosmic-icons"
+  ["cosmic-idle"]="cosmic-idle"
   ["cosmic-launcher"]="cosmic-launcher"
   ["cosmic-notifications"]="cosmic-notifications"
   ["cosmic-osd"]="cosmic-osd"
