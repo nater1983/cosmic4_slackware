@@ -80,6 +80,7 @@ cd $TMP
 rm -rf $PRGNAM-$_commit
 tar xvf $CWD/$PRGNAM-$_commit.tar.?z || exit 1
 cd $PRGNAM-$_commit || exit 1
+patch -Np1 -i $CWD/use-libdirsuffix.patch
 chown -R root:root .
 find -L . \
  \( -perm 777 -o -perm 775 -o -perm 750 -o -perm 711 -o -perm 555 \
@@ -88,6 +89,7 @@ find -L . \
   -o -perm 440 -o -perm 400 \) -exec chmod 644 {} \;
 
 sed -i "s|base-dir / 'lib'|base-dir / 'lib${LIBDIRSUFFIX}'|g" justfile
+sed -i "s|@LIBDIRSUFFIX@|${LIBDIRSUFFIX}|" src/config.rs
 
 export VERGEN_GIT_COMMIT_DATE="$(date --utc '+%Y-%m-%d %H:%M:%S %z')"
 export VERGEN_GIT_SHA=$_commit
