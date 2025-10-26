@@ -89,7 +89,7 @@ find -L . \
   -o -perm 440 -o -perm 400 \) -exec chmod 644 {} \;
 
 sed -i "s|base-dir / 'lib'|base-dir / 'lib${LIBDIRSUFFIX}'|g" justfile
-sed -i "s|@LIBDIRSUFFIX@|${LIBDIRSUFFIX}|" src/config.rs
+sed -i "s|@LIBDIRSUFFIX@|${LIBDIRSUFFIX}|" src/lib.rs
 
 export VERGEN_GIT_COMMIT_DATE="$(date --utc '+%Y-%m-%d %H:%M:%S %z')"
 export VERGEN_GIT_SHA=$_commit
