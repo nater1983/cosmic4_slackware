@@ -1,182 +1,477 @@
-From 6fbc64043fccf9b2b880904bc3511e0428046026 Mon Sep 17 00:00:00 2001
-From: Foxinatel <nathanielma5on@yahoo.com>
-Date: Fri, 9 Aug 2024 17:53:06 +0100
-Subject: [PATCH 1/3] Fix compile-time errors with --no-default-features
+From 472db4233083e8c6dabc24b0589183d0fd4e2b61 Mon Sep 17 00:00:00 2001
+From: Ian Douglas Scott <idscott@system76.com>
+Date: Mon, 20 Oct 2025 18:59:32 -0700
+Subject: [PATCH] Don't create privileged sockets
 
+Our "privileged sockets" support in cosmic comp has never been enforced
+by default, and predates the Wayland security context protocol. That
+should cover sandboxed clients, while we can't really secure against
+non-sandboxed clients.
+
+We also rely on the DBus socket-activated portal backend having access
+to "privileged" protocols now.
+
+So it makes sense to remove this.
 ---
- src/main.rs | 37 ++++++++++++++++---------------------
- 1 file changed, 16 insertions(+), 21 deletions(-)
+ src/comp.rs          |  91 +-------------------------
+ src/main.rs          | 149 ++++---------------------------------------
+ src/notifications.rs |  24 ++-----
+ 3 files changed, 20 insertions(+), 244 deletions(-)
 
+diff --git a/src/comp.rs b/src/comp.rs
+index 86406e7..d4f5861 100644
+--- a/src/comp.rs
++++ b/src/comp.rs
+@@ -1,15 +1,11 @@
+ // SPDX-License-Identifier: GPL-3.0-only
+ use color_eyre::eyre::{Result, WrapErr};
+ use launch_pad::{ProcessManager, process::Process};
+-use sendfd::SendWithFd;
+ use serde::{Deserialize, Serialize};
+ use std::{collections::HashMap, os::unix::prelude::*};
+ use tokio::{
+-	io::{AsyncReadExt, AsyncWriteExt},
+-	net::{
+-		UnixStream,
+-		unix::{OwnedReadHalf, OwnedWriteHalf},
+-	},
++	io::AsyncReadExt,
++	net::{UnixStream, unix::OwnedReadHalf},
+ 	sync::{mpsc, oneshot},
+ 	task::JoinHandle,
+ };
+@@ -21,7 +17,6 @@ use crate::{process::mark_as_not_cloexec, service::SessionRequest};
+ #[serde(rename_all = "snake_case", tag = "message")]
+ pub enum Message {
+ 	SetEnv { variables: HashMap<String, String> },
+-	NewPrivilegedClient { count: usize },
+ }
+ 
+ // Cancellation safe!
+@@ -40,9 +35,6 @@ fn parse_and_handle_ipc(state: &mut IpcState) {
+ 				env_tx.send(variables).unwrap();
+ 			}
+ 		}
+-		Ok(Message::NewPrivilegedClient { .. }) => {
+-			unreachable!("NewPrivilegedClient should not be sent TO the session!");
+-		}
+ 		Err(_) => {
+ 			warn!(
+ 				"Unknown session socket message, are you using incompatible cosmic-session and \
+@@ -101,82 +93,11 @@ async fn receive_ipc(state: &mut IpcState, rx: &mut OwnedReadHalf) -> Result<()>
+ 	}
+ }
+ 
+-pub fn create_privileged_socket(
+-	sockets: &mut Vec<UnixStream>,
+-	env_vars: &[(String, String)],
+-) -> Result<(Vec<(String, String)>, OwnedFd)> {
+-	// Create a new pair of unnamed Unix sockets
+-	let (comp_socket, client_socket) =
+-		UnixStream::pair().wrap_err("failed to create socket pair")?;
+-	// Push one socket to the list of sockets we were passed
+-	sockets.push(comp_socket);
+-	// Turn the other socket into a non-blocking fd, which we can pass to the child
+-	// process
+-	let client_fd = {
+-		let std_stream = client_socket
+-			.into_std()
+-			.wrap_err("failed to convert client socket to std socket")?;
+-		std_stream
+-			.set_nonblocking(true)
+-			.wrap_err("failed to mark client socket as non-blocking")?;
+-		OwnedFd::from(std_stream)
+-	};
+-	let mut env_vars = env_vars.to_vec();
+-	env_vars.push(("WAYLAND_SOCKET".into(), client_fd.as_raw_fd().to_string()));
+-	Ok((env_vars, client_fd))
+-}
+-
+-async fn send_fd(session_tx: &mut OwnedWriteHalf, stream: Vec<UnixStream>) -> Result<()> {
+-	// Turn our list of Unix streams into non-blocking file descriptors.
+-	let fds = stream
+-		.into_iter()
+-		.map(|stream| {
+-			let std_stream = stream
+-				.into_std()
+-				.wrap_err("failed to convert stream to std stream")?;
+-			std_stream
+-				.set_nonblocking(false)
+-				.wrap_err("failed to set stream as blocking")?;
+-			Ok(OwnedFd::from(std_stream))
+-		})
+-		.collect::<Result<Vec<_>>>()
+-		.wrap_err("failed to convert streams to file descriptors")?;
+-	// Create a NewPrivilegedClient message, with a count of how many file
+-	// descriptors we are about to send.
+-	let json = serde_json::to_string(&Message::NewPrivilegedClient { count: fds.len() })
+-		.wrap_err("failed to encode json")?;
+-	// Send the length of our NewPrivilegedClient message.
+-	session_tx
+-		.write_all(&(json.len() as u16).to_le_bytes())
+-		.await
+-		.wrap_err("failed to write length")?;
+-	// Send our NewPrivilegedClient message, in JSON form.
+-	session_tx
+-		.write_all(json.as_bytes())
+-		.await
+-		.wrap_err("failed to write json")?;
+-	// Wait 100 us for the session to acknowledge our message.
+-	tokio::time::sleep(std::time::Duration::from_micros(100)).await;
+-	// Send our file descriptors.
+-	let fd: &UnixStream = session_tx.as_ref();
+-	info!("sending {} fds", fds.len());
+-
+-	fd.send_with_fd(
+-		&[0],
+-		&fds.into_iter()
+-			.map(|fd| fd.into_raw_fd())
+-			.collect::<Vec<_>>(),
+-	)
+-	.wrap_err("failed to send fd")?;
+-	Ok(())
+-}
+-
+ pub fn run_compositor(
+ 	process_manager: &ProcessManager,
+ 	exec: String,
+ 	args: Vec<String>,
+ 	_token: CancellationToken,
+-	mut socket_rx: mpsc::UnboundedReceiver<Vec<UnixStream>>,
+ 	env_tx: oneshot::Sender<HashMap<String, String>>,
+ 	session_dbus_tx: mpsc::Sender<SessionRequest>,
+ ) -> Result<JoinHandle<Result<()>>> {
+@@ -184,7 +105,7 @@ pub fn run_compositor(
+ 	// Create a pair of unix sockets - one for us (session),
+ 	// one for the compositor (comp)
+ 	let (session, comp) = UnixStream::pair().wrap_err("failed to create pair of unix sockets")?;
+-	let (mut session_rx, mut session_tx) = session.into_split();
++	let (mut session_rx, _session_tx) = session.into_split();
+ 	// Convert our compositor socket to a non-blocking file descriptor.
+ 	let comp = {
+ 		let std_stream = comp
+@@ -242,12 +163,6 @@ pub fn run_compositor(
+ 					error!("failed to receive IPC: {:?}", err);
+ 					break;
+ 				},
+-				// Send any file descriptors we need to the compositor.
+-				Some(socket) = socket_rx.recv() => {
+-					send_fd(&mut session_tx, socket)
+-						.await
+-						.wrap_err("failed to send file descriptor to compositor")?;
+-				}
+ 			}
+ 		}
+ 		Result::<()>::Ok(())
 diff --git a/src/main.rs b/src/main.rs
-index 6f64eb1..bf6e2e8 100644
+index c2e32fb..edb8700 100644
 --- a/src/main.rs
 +++ b/src/main.rs
-@@ -21,6 +21,7 @@ use cosmic_notifications_util::{DAEMON_NOTIFICATIONS_FD, PANEL_NOTIFICATIONS_FD}
+@@ -11,7 +11,6 @@ mod systemd;
+ 
+ use async_signals::Signals;
+ use color_eyre::{Result, eyre::WrapErr};
+-use comp::create_privileged_socket;
+ use cosmic_notifications_util::{DAEMON_NOTIFICATIONS_FD, PANEL_NOTIFICATIONS_FD};
  use futures_util::StreamExt;
- use launch_pad::{process::Process, ProcessManager};
- use service::SessionRequest;
-+#[cfg(feature = "systemd")]
- use systemd::{is_systemd_used, spawn_scope};
+ #[cfg(feature = "autostart")]
+@@ -24,19 +23,13 @@ use std::collections::HashSet;
+ use std::path::PathBuf;
+ #[cfg(feature = "autostart")]
+ use std::process::{Command, Stdio};
+-use std::{
+-	borrow::Cow,
+-	env,
+-	os::fd::{AsRawFd, OwnedFd},
+-	sync::Arc,
+-};
++use std::{borrow::Cow, env, os::fd::AsRawFd, sync::Arc};
+ #[cfg(feature = "systemd")]
+ use systemd::{get_systemd_env, is_systemd_used, spawn_scope};
  use tokio::{
- 	net::UnixStream,
-@@ -58,10 +59,9 @@ async fn main() -> Result<()> {
- 	let session_tx_clone = session_tx.clone();
- 	let _conn = ConnectionBuilder::session()?
- 		.name("com.system76.CosmicSession")?
--		.serve_at(
--			"/com/system76/CosmicSession",
--			service::SessionService { session_tx },
--		)?
-+		.serve_at("/com/system76/CosmicSession", service::SessionService {
-+			session_tx,
-+		})?
- 		.build()
- 		.await?;
+-	net::UnixStream,
+ 	sync::{
+ 		Mutex,
+-		mpsc::{self, Receiver, Sender},
++		mpsc::{Receiver, Sender},
+ 		oneshot,
+ 	},
+ 	time::Duration,
+@@ -141,14 +134,12 @@ async fn start(
+ 		))
+ 		.await;
+ 	let token = CancellationToken::new();
+-	let (socket_tx, socket_rx) = mpsc::unbounded_channel();
+ 	let (env_tx, env_rx) = oneshot::channel();
+ 	let compositor_handle = comp::run_compositor(
+ 		&process_manager,
+ 		executable.clone(),
+ 		args,
+ 		token.child_token(),
+-		socket_rx,
+ 		env_tx,
+ 		session_tx,
+ 	)
+@@ -311,7 +302,6 @@ async fn start(
+ 				"cosmic-panel",
+ 				panel_key.clone(),
+ 				panel_env_vars.clone(),
+-				socket_tx.clone(),
+ 			))
+ 			.await
+ 			.expect("failed to start notifications daemon"),
+@@ -331,7 +321,6 @@ async fn start(
+ 				"cosmic-notifications",
+ 				notif_key,
+ 				daemon_env_vars,
+-				socket_tx.clone(),
+ 			))
+ 			.await
+ 			.expect("failed to start panel"),
+@@ -339,92 +328,28 @@ async fn start(
+ 	drop(guard);
  
-@@ -135,8 +135,8 @@ async fn start(
- 		.await
- 		.expect("failed to start settings daemon");
+ 	let span = info_span!(parent: None, "cosmic-app-library");
+-	start_component(
+-		"cosmic-app-library",
+-		span,
+-		&process_manager,
+-		&env_vars,
+-		&socket_tx,
+-		Vec::new(),
+-	)
+-	.await;
++	start_component("cosmic-app-library", span, &process_manager, &env_vars).await;
  
--	// notifying the user service manager that we've reached the graphical-session.target,
--	// which should only happen after:
-+	// notifying the user service manager that we've reached the
-+	// graphical-session.target, which should only happen after:
- 	// - cosmic-comp is ready
- 	// - we've set any related variables
- 	// - cosmic-settings-daemon is ready
-@@ -379,22 +379,17 @@ async fn start_component(
- 					}
- 					.instrument(stderr_span)
- 				})
--				.with_on_start(move |pman, pkey, _will_restart| {
-+				.with_on_start(move |pman, pkey, _will_restart| async move {
- 					#[cfg(feature = "systemd")]
--					{
--						async move {
--							if *is_systemd_used() {
--								if let Ok((innr_cmd, Some(pid))) = pman.get_exe_and_pid(pkey).await
--								{
--									if let Err(err) = spawn_scope(innr_cmd.clone(), vec![pid]).await
--									{
--										warn!(
--													"Failed to spawn scope for {}. Creating transient unit failed with {}",
--													innr_cmd, err
--												);
--									};
--								}
--							}
-+					if *is_systemd_used() {
-+						if let Ok((innr_cmd, Some(pid))) = pman.get_exe_and_pid(pkey).await {
-+							if let Err(err) = spawn_scope(innr_cmd.clone(), vec![pid]).await {
-+								warn!(
-+									"Failed to spawn scope for {}. Creating transient unit failed \
-+									 with {}",
-+									innr_cmd, err
-+								);
-+							};
+ 	let span = info_span!(parent: None, "cosmic-launcher");
+-	start_component(
+-		"cosmic-launcher",
+-		span,
+-		&process_manager,
+-		&env_vars,
+-		&socket_tx,
+-		Vec::new(),
+-	)
+-	.await;
++	start_component("cosmic-launcher", span, &process_manager, &env_vars).await;
+ 
+ 	let span = info_span!(parent: None, "cosmic-workspaces");
+-	start_component(
+-		"cosmic-workspaces",
+-		span,
+-		&process_manager,
+-		&env_vars,
+-		&socket_tx,
+-		Vec::new(),
+-	)
+-	.await;
++	start_component("cosmic-workspaces", span, &process_manager, &env_vars).await;
+ 
+ 	let span = info_span!(parent: None, "cosmic-osd");
+-	start_component(
+-		"cosmic-osd",
+-		span,
+-		&process_manager,
+-		&env_vars,
+-		&socket_tx,
+-		Vec::new(),
+-	)
+-	.await;
++	start_component("cosmic-osd", span, &process_manager, &env_vars).await;
+ 
+ 	let span = info_span!(parent: None, "cosmic-bg");
+-	start_component(
+-		"cosmic-bg",
+-		span,
+-		&process_manager,
+-		&env_vars,
+-		&socket_tx,
+-		Vec::new(),
+-	)
+-	.await;
++	start_component("cosmic-bg", span, &process_manager, &env_vars).await;
+ 
+ 	let span = info_span!(parent: None, "cosmic-greeter");
+-	start_component(
+-		"cosmic-greeter",
+-		span,
+-		&process_manager,
+-		&env_vars,
+-		&socket_tx,
+-		Vec::new(),
+-	)
+-	.await;
++	start_component("cosmic-greeter", span, &process_manager, &env_vars).await;
+ 
+ 	let span = info_span!(parent: None, "cosmic-files-applet");
+-	start_component(
+-		"cosmic-files-applet",
+-		span,
+-		&process_manager,
+-		&env_vars,
+-		&socket_tx,
+-		Vec::new(),
+-	)
+-	.await;
++	start_component("cosmic-files-applet", span, &process_manager, &env_vars).await;
+ 
+ 	let span = info_span!(parent: None, "cosmic-idle");
+-	start_component(
+-		"cosmic-idle",
+-		span,
+-		&process_manager,
+-		&env_vars,
+-		&socket_tx,
+-		Vec::new(),
+-	)
+-	.await;
++	start_component("cosmic-idle", span, &process_manager, &env_vars).await;
+ 
+ 	#[cfg(feature = "autostart")]
+ 	if !*is_systemd_used() {
+@@ -581,31 +506,13 @@ async fn start_component(
+ 	span: tracing::Span,
+ 	process_manager: &ProcessManager,
+ 	env_vars: &[(String, String)],
+-	socket_tx: &mpsc::UnboundedSender<Vec<UnixStream>>,
+-	extra_fds: Vec<(OwnedFd, (String, String), UnixStream)>,
+ ) {
+-	let mut sockets = Vec::with_capacity(2);
+-	let (mut env_vars, fd) = create_privileged_socket(&mut sockets, &env_vars).unwrap();
+-
+-	let socket_tx_clone = socket_tx.clone();
+ 	let stdout_span = span.clone();
+ 	let stderr_span = span.clone();
+ 	let stderr_span_clone = stderr_span.clone();
+ 	let cmd = cmd.into();
+ 	let cmd_clone = cmd.clone();
+ 
+-	let (mut fds, extra_fd_env, mut streams): (Vec<_>, Vec<_>, Vec<_>) =
+-		itertools::multiunzip(extra_fds);
+-	for kv in &extra_fd_env {
+-		env_vars.push(kv.clone());
+-	}
+-
+-	sockets.append(&mut streams);
+-	if let Err(why) = socket_tx.send(sockets) {
+-		error!(?why, "Failed to send the privileged socket");
+-	}
+-	let (extra_fd_env, _): (Vec<_>, Vec<_>) = extra_fd_env.into_iter().unzip();
+-	fds.push(fd);
+ 	if let Err(err) = process_manager
+ 		.start(
+ 			Process::new()
+@@ -639,42 +546,12 @@ async fn start_component(
  						}
  					}
  				})
-
-From 054dc5ebfb0a5ed352c8e8f495a8b192e6042434 Mon Sep 17 00:00:00 2001
-From: Foxinatel <nathanielma5on@yahoo.com>
-Date: Fri, 9 Aug 2024 17:58:14 +0100
-Subject: [PATCH 2/3] Builds without systemd should no longer hard depend on
- journald
-
----
- Cargo.toml  | 4 ++--
- src/main.rs | 6 ++++--
- 2 files changed, 6 insertions(+), 4 deletions(-)
-
-diff --git a/Cargo.toml b/Cargo.toml
-index b7015dd..c0c7a68 100644
---- a/Cargo.toml
-+++ b/Cargo.toml
-@@ -39,11 +39,11 @@ zbus_systemd = { version = "0.25600.0", optional = true, features = [
- ] }
- tokio-util = "0.7"
- tracing = "0.1"
--tracing-journald = "0.3"
-+tracing-journald = { version = "0.3", optional = true }
- tracing-subscriber = { version = "0.3", features = ["env-filter"] }
- zbus = { version = "4.3.0", default-features = false, features = ["tokio"] }
- cosmic-notifications-util = { git = "https://github.com/pop-os/cosmic-notifications" }
+-				.with_on_exit(move |mut pman, key, err_code, will_restart| {
++				.with_on_exit(move |mut _pman, _key, err_code, _will_restart| {
+ 					if let Some(err) = err_code {
+ 						error!("{cmd_clone} exited with error {}", err.to_string());
+ 					}
+-					let extra_fd_env = extra_fd_env.clone();
+-					let socket_tx_clone = socket_tx_clone.clone();
+-					async move {
+-						if !will_restart {
+-							return;
+-						}
+-
+-						let mut sockets = Vec::with_capacity(1 + extra_fd_env.len());
+-						let mut fds = Vec::with_capacity(1 + extra_fd_env.len());
+-						let (mut env_vars, fd) =
+-							create_privileged_socket(&mut sockets, &[]).unwrap();
+-						fds.push(fd);
+-						for k in extra_fd_env {
+-							let (mut fd_env_vars, fd) =
+-								create_privileged_socket(&mut sockets, &[]).unwrap();
+-							fd_env_vars.last_mut().unwrap().0 = k;
+-							env_vars.append(&mut fd_env_vars);
+-							fds.push(fd)
+-						}
+-
+-						if let Err(why) = socket_tx_clone.send(sockets) {
+-							error!(?why, "Failed to send the privileged socket");
+-						}
+-						if let Err(why) = pman.update_process_env(&key, env_vars).await {
+-							error!(?why, "Failed to update environment variables");
+-						}
+-						if let Err(why) = pman.update_process_fds(&key, move || fds).await {
+-							error!(?why, "Failed to update fds");
+-						}
+-					}
+-				})
+-				.with_fds(move || fds),
++					async {}
++				}),
+ 		)
+ 		.await
+ 	{
+diff --git a/src/notifications.rs b/src/notifications.rs
+index 0726e34..0ead417 100644
+--- a/src/notifications.rs
++++ b/src/notifications.rs
+@@ -6,11 +6,9 @@ use std::{
+ 	os::{fd::OwnedFd, unix::net::UnixStream},
+ 	sync::Arc,
+ };
+-use tokio::sync::{Mutex, mpsc};
++use tokio::sync::Mutex;
+ use tracing::Instrument;
  
- [features]
--systemd = ["dep:zbus_systemd"]
-+systemd = ["dep:zbus_systemd", "dep:tracing-journald"]
- default = ["systemd"]
-diff --git a/src/main.rs b/src/main.rs
-index bf6e2e8..11fe0db 100644
---- a/src/main.rs
-+++ b/src/main.rs
-@@ -43,8 +43,10 @@ const XDP_COSMIC: Option<&'static str> = option_env!("XDP_COSMIC");
- async fn main() -> Result<()> {
- 	color_eyre::install().wrap_err("failed to install color_eyre error handler")?;
+-use crate::comp::create_privileged_socket;
+-
+ pub fn create_socket() -> Result<(OwnedFd, OwnedFd)> {
+ 	// Create a new pair of unnamed Unix sockets
+ 	let (sock_1, sock_2) = UnixStream::pair().wrap_err("failed to create socket pair")?;
+@@ -38,20 +36,15 @@ pub fn notifications_process(
+ 	restart_cmd: &'static str,
+ 	restart_key: Arc<Mutex<Option<ProcessKey>>>,
+ 	restart_env_vars: Vec<(String, String)>,
+-	socket_tx: mpsc::UnboundedSender<Vec<tokio::net::UnixStream>>,
+ ) -> Process {
+ 	env_vars.retain(|v| &v.0 != "WAYLAND_SOCKET");
  
--	tracing_subscriber::registry()
--		.with(tracing_journald::layer().wrap_err("failed to connect to journald")?)
-+	let trace = tracing_subscriber::registry();
-+	#[cfg(feature = "systemd")]
-+	let trace = trace.with(tracing_journald::layer().wrap_err("failed to connect to journald")?);
-+	trace
- 		.with(fmt::layer())
- 		.with(
- 			EnvFilter::builder()
-
-From 357379d116501a337e4dc1f3375f2f71e74f1f31 Mon Sep 17 00:00:00 2001
-From: Foxinatel <nathanielma5on@yahoo.com>
-Date: Fri, 9 Aug 2024 21:35:13 +0100
-Subject: [PATCH 3/3] Make failure to connect to journald a warning, not a hard
- error
-
----
- src/main.rs | 29 +++++++++++++++++++++++------
- 1 file changed, 23 insertions(+), 6 deletions(-)
-
-diff --git a/src/main.rs b/src/main.rs
-index 11fe0db..636d88b 100644
---- a/src/main.rs
-+++ b/src/main.rs
-@@ -44,17 +44,34 @@ async fn main() -> Result<()> {
- 	color_eyre::install().wrap_err("failed to install color_eyre error handler")?;
+ 	let stdout_span = span.clone();
+ 	let stderr_span = span.clone();
+-	let mut sockets = Vec::with_capacity(1);
+-	let (env_vars, privileged_fd) = create_privileged_socket(&mut sockets, &env_vars).unwrap();
+-	_ = socket_tx.send(sockets);
+ 	let env_clone = env_vars.clone();
+-	let socket_tx_clone = socket_tx.clone();
+ 	Process::new()
+ 		.with_executable(cmd)
+-		.with_fds(move || vec![privileged_fd, fd])
++		.with_fds(move || vec![fd])
+ 		.with_on_stdout(move |_, _, line| {
+ 			let stdout_span = stdout_span.clone();
+ 			async move {
+@@ -96,26 +89,17 @@ pub fn notifications_process(
+ 				cmd,
+ 				key.clone(),
+ 				my_env_vars.clone(),
+-				socket_tx_clone.clone(),
+ 			);
+ 			let restart_key = restart_key.clone();
+-			let socket_tx_clone = socket_tx_clone.clone();
  
- 	let trace = tracing_subscriber::registry();
-+	let env_filter = EnvFilter::builder()
-+		.with_default_directive(LevelFilter::INFO.into())
-+		.from_env_lossy();
-+
- 	#[cfg(feature = "systemd")]
--	let trace = trace.with(tracing_journald::layer().wrap_err("failed to connect to journald")?);
-+	if let Ok(journald) = tracing_journald::layer() {
-+		trace
-+			.with(journald)
-+			.with(fmt::layer())
-+			.with(env_filter)
-+			.try_init()
-+			.wrap_err("failed to initialize logger")?;
-+	} else {
-+		trace
-+			.with(fmt::layer())
-+			.with(env_filter)
-+			.try_init()
-+			.wrap_err("failed to initialize logger")?;
-+		warn!("failed to connect to journald")
-+	}
-+
-+	#[cfg(not(feature = "systemd"))]
- 	trace
- 		.with(fmt::layer())
--		.with(
--			EnvFilter::builder()
--				.with_default_directive(LevelFilter::INFO.into())
--				.from_env_lossy(),
--		)
-+		.with(env_filter)
- 		.try_init()
- 		.wrap_err("failed to initialize logger")?;
-+
- 	log_panics::init();
- 
- 	let (session_tx, mut session_rx) = tokio::sync::mpsc::channel(10);
+ 			let mut pman_clone = pman.clone();
+ 			async move {
+ 				if will_restart {
+-					let mut sockets = Vec::with_capacity(1);
+-					let (env_vars, new_fd) =
+-						create_privileged_socket(&mut sockets, &my_env_vars).unwrap();
+-
+-					if let Err(why) = socket_tx_clone.send(sockets) {
+-						error!(?why, "Failed to send the privileged socket");
+-					}
+-					if let Err(why) = pman_clone.update_process_env(&my_key, env_vars).await {
++					if let Err(why) = pman_clone.update_process_env(&my_key, my_env_vars).await {
+ 						error!(?why, "Failed to update environment variables");
+ 					}
+ 					if let Err(why) = pman_clone
+-						.update_process_fds(&my_key, move || vec![new_fd, my_fd])
++						.update_process_fds(&my_key, move || vec![my_fd])
+ 						.await
+ 					{
+ 						error!(?why, "Failed to update fds");
