@@ -65,6 +65,7 @@ install -vDm 0644 $CWD/cosmic-dark.jpg -t $PKG/usr/share/backgrounds/cosmic/
 install -vDm 0644 $CWD/SlackGalaxy.jpg -t $PKG/usr/share/backgrounds/cosmic/
 install -vDm 0644 $CWD/space.png -t $PKG/usr/share/backgrounds/cosmic/
 install -vDm 0644 $CWD/cosmic-colors.png -t $PKG/usr/share/backgrounds/cosmic/
+install -vDm 0644 $CWD/snukware-cosmic.png -t $PKG/usr/share/backgrounds/cosmic/
 
 rm -f $PKG/{,usr/}lib${LIBDIRSUFFIX}/*.la
 
