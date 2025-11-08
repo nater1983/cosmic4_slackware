@@ -115,7 +115,9 @@ find $PKG -name perllocal.pod \
   | xargs rm -f
 
 mkdir -p $PKG/usr/doc/$PRGNAM-$VERSION
-cp -a CHANGELOG.md LICENSE_GPL.txt LICENSE_LGPL.txt LICENSE_MIT.txt README.md $PKG/usr/doc/$PRGNAM-$VERSION
+cp -a CHANGELOG.md LICENSE_GPL.txt LICENSE_LGPL.txt LICENSE_MIT.txt README.md \
+    $PKG/usr/doc/$PRGNAM-$VERSION
+
 # Remove any systemd files if present
 for path in usr/lib/systemd usr/lib64/systemd; do
   if [ -d "$PKG/$path" ]; then
