@@ -106,7 +106,6 @@ cd ..
 mkdir -p $PKG/usr/doc/$PRGNAM-$VERSION
 cp -a COPYING NEWS $PKG/usr/doc/$PRGNAM-$VERSION
 zcat $CWD/README.gz >  $PKG/usr/doc/$PRGNAM-$VERSION/README.gfs
-cat $CWD/$PRGNAM.SlackBuild > $PKG/usr/doc/$PRGNAM-$VERSION/$PRGNAM.SlackBuild
 # Remove any systemd files if present
 for path in usr/lib/systemd usr/lib64/systemd; do
   if [ -d "$PKG/$path" ]; then

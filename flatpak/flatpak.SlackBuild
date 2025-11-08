@@ -130,8 +130,8 @@ install -vDm 0644 $CWD/flathub.png -t $PKG/usr/share/icons/hicolor/128x128/apps/
 mkdir -p $PKG/usr/doc/$PRGNAM-$VERSION
 cp -a README.md COPYING NEWS \
     $PKG/usr/doc/$PRGNAM-$VERSION
+
 zcat $CWD/README.gz >  $PKG/usr/doc/$PRGNAM-$VERSION/README
-cat $CWD/$PRGNAM.SlackBuild > $PKG/usr/doc/$PRGNAM-$VERSION/$PRGNAM.SlackBuild
 # Remove any systemd files if present
 for path in usr/lib/systemd usr/lib64/systemd; do
   if [ -d "$PKG/$path" ]; then

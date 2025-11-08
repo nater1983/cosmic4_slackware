@@ -100,7 +100,7 @@ rm -f $PKG/{,usr/}lib${LIBDIRSUFFIX}/*.a
 mkdir -p $PKG/usr/doc/$PRGNAM-$VERSION
 cp -a *.md doc/* \
     $PKG/usr/doc/$PRGNAM-$VERSION
-cat $CWD/$PRGNAM.SlackBuild > $PKG/usr/doc/$PRGNAM-$VERSION/$PRGNAM.SlackBuild
+
 
 # Remove any systemd files if present
 for path in usr/lib/systemd usr/lib64/systemd; do

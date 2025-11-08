@@ -122,7 +122,6 @@ install -Dm0644 -t $PKG/etc/rc.d $CWD/rc.$PRGNAM
 
 mkdir -p $PKG/usr/doc/$PRGNAM-$VERSION
 cp -a  LICENSE README.md $PKG/usr/doc/$PRGNAM-$VERSION
-cat $CWD/$PRGNAM.SlackBuild > $PKG/usr/doc/$PRGNAM-$VERSION/$PRGNAM.SlackBuild
 # Remove any systemd files if present
 for path in usr/lib/systemd usr/lib64/systemd; do
   if [ -d "$PKG/$path" ]; then
