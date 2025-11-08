@@ -139,7 +139,8 @@ fi
 rm -f $PKG/{,usr/}lib${LIBDIRSUFFIX}/*.la
 
 mkdir -p $PKG/usr/doc/$PRGNAM-$VERSION
-cp -a README LICENSE COPYING CHANGES $PKG/usr/doc/$PRGNAM-$VERSION
+cp -a README LICENSE COPYING CHANGES \
+    $PKG/usr/doc/$PRGNAM-$VERSION
 
 # Remove any systemd files if present
 for path in usr/lib/systemd usr/lib64/systemd; do
