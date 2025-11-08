@@ -121,7 +121,9 @@ for i in $( find $PKG/usr/man -type l ) ; do ln -s $( readlink $i ).gz $i.gz ; r
 install -Dm0644 -t $PKG/etc/rc.d $CWD/rc.$PRGNAM
 
 mkdir -p $PKG/usr/doc/$PRGNAM-$VERSION
-cp -a  LICENSE README.md $PKG/usr/doc/$PRGNAM-$VERSION
+cp -a  LICENSE README.md \
+    $PKG/usr/doc/$PRGNAM-$VERSION
+
 # Remove any systemd files if present
 for path in usr/lib/systemd usr/lib64/systemd; do
   if [ -d "$PKG/$path" ]; then
