@@ -100,7 +100,8 @@ find $PKG -print0 | xargs -0 file | grep -e "executable" -e "shared object" | gr
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null || true
 
 mkdir -p $PKG/usr/doc/$PRGNAM-$VERSION
-cp -a README.html version-notes.html leptonica-license.txt $PKG/usr/doc/$PRGNAM-$VERSION
+cp -a README.html version-notes.html leptonica-license.txt \
+    $PKG/usr/doc/$PRGNAM-$VERSION
 
 # Remove any systemd files if present
 for path in usr/lib/systemd usr/lib64/systemd; do
