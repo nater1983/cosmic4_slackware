@@ -1,4 +1,3 @@
-AppStream
 aaa_cosmic
 bubblewrap
 cosmic-applets
@@ -34,8 +33,7 @@ greetd
 just
 launcher
 libostree
-libstemmer
-libxmlb
+llibxmlb
 pop-gtk-theme
 pop-icon-theme
 sddm-sugar-candy
