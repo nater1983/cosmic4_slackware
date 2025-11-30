@@ -111,7 +111,6 @@ mkdir -p $PKG/usr/doc/$PRGNAM-$VERSION
 cp -a LICENSE README.md \
     $PKG/usr/doc/$PRGNAM-$VERSION
 
-
 # Remove any systemd files if present
 for path in usr/lib/systemd usr/lib64/systemd usr/lib/{sysusers.d,tmpfiles.d}; do
   if [ -d "$PKG/$path" ]; then
