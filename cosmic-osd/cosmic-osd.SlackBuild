@@ -91,8 +91,8 @@ find -L . \
 export RUSTUP_TOOLCHAIN=stable
 cargo fetch --locked
 RUSTFLAGS+=" -C link-arg=-fuse-ld=mold"
-ARGS+=" --frozen" make
-make prefix='/usr' DESTDIR=$PKG install
+just build-release --frozen
+just rootdir=$PKG install
 
 find $PKG -print0 | xargs -0 file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null || true
