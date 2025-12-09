@@ -26,7 +26,8 @@ wget -c https://www.freedesktop.org/software/appstream/releases/AppStream-1.1.0.
 
 cd $(dirname $0) ; CWD=$(pwd)
 
-PRGNAM=AppStream
+PRGNAM=appstream
+SRCNM=AppStream
 VERSION=${VERSION:-1.1.0}
 TAG=_cosmic
 BUILD=${BUILD:-1}
@@ -71,9 +72,9 @@ set -e
 rm -rf $PKG
 mkdir -p $TMP $PKG
 cd $TMP
-rm -rf $PRGNAM-$VERSION
-tar xvf $CWD/$PRGNAM-$VERSION.tar.?z*
-cd $PRGNAM-$VERSION
+rm -rf $SRCNM-$VERSION
+tar xvf $CWD/$SRCNM-$VERSION.tar.?z*
+cd $SRCNM-$VERSION
 patch -Np1 -i $CWD/1.patch
 rm -r tests/samples/compose/usr/*
 chown -R root:root .
