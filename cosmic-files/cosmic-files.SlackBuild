@@ -22,13 +22,13 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/cosmic-files-1.0.0.beta.9.tar.lz
+wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/cosmic-files-1.0.0.tar.lz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=cosmic-files
-VERSION=1.0.0.beta.9
-_commit=1.0.0.beta.9
+VERSION=1.0.0
+_commit=1.0.0
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}

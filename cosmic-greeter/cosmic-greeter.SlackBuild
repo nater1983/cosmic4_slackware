@@ -22,13 +22,13 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/cosmic-greeter-1.0.0.beta.8.tar.lz
+wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/cosmic-greeter-1.0.0.tar.lz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=cosmic-greeter
-VERSION=1.0.0.beta.8
-_commit=1.0.0.beta.8
+VERSION=1.0.0
+_commit=1.0.0
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
