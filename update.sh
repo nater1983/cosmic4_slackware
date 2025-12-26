@@ -78,7 +78,7 @@ declare -A CORE_REPOS=(
   ["cosmic-store"]="cosmic-store"
   ["cosmic-workspaces-epoch"]="cosmic-workspaces-epoch"
   ["launcher"]="launcher"
-  ["system76-power"]="system76-power"
+  ["power"]="system76-power"
   ["xdg-desktop-portal-cosmic"]="xdg-desktop-portal-cosmic"
 
 )
