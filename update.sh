@@ -3,9 +3,9 @@
 # Array of project names and corresponding GitHub repository names
 declare -A repos=(
   ["cosmic-reader"]="cosmic-reader"
-  ["pop-gtk-theme"]="gtk-theme" 
-  ["pop-icon-theme"]="icon-theme"  
-  ["system76-fonts"]="fonts"
+  ["gtk-theme"]="gtk-theme" 
+  ["icon-theme"]="icon-theme"  
+  ["fonts"]="fonts"
 )
 
 # Exit script on any error
