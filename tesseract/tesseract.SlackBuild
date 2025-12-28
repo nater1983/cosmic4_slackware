@@ -32,13 +32,13 @@
 # Thanks to S+*n_Pe*rm*n for a bug report from OCRopus.
 # Modified by Willy Sudiarto Raharjo <willysr@slackware-id.org>
 
-wget -c https://github.com/tesseract-ocr/tesseract/archive/5.5.1/tesseract-5.5.1.tar.gz
+wget -c https://github.com/tesseract-ocr/tesseract/archive/5.5.2/tesseract-5.5.2.tar.gz
 wget -c https://github.com/tesseract-ocr/tessdata/raw/4.1.0/eng.traineddata
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=tesseract
-VERSION=${VERSION:-5.5.1}
+VERSION=${VERSION:-5.5.2}
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
