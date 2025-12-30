@@ -42,6 +42,7 @@ directories=(
   "gumbo-parser"
   "jbig2dec"
   "leptonica"
+  "tesseract"
   "cosmic-reader"
   "cosmic-screenshot"
   "cosmic-session"
