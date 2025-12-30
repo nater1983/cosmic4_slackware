@@ -22,7 +22,6 @@ mkdir -p /var/cache/cosmic
 directories=(
   "just"
   "switcheroo-control"
-  "seatd"
   "geoclue2"
   "fira-fonts"
   "cosmic-applets"
