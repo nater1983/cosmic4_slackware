@@ -3,7 +3,7 @@
 # The next generation COSMIC Desktop Environment
 
 
-> We\'re living the future so
+> We're living the future so
 > the present is our past.
 > LONG LIVE SLACKWARE!
 
