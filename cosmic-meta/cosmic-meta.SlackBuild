@@ -59,9 +59,11 @@ find -L . \
  \( -perm 666 -o -perm 664 -o -perm 640 -o -perm 600 -o -perm 444 \
   -o -perm 440 -o -perm 400 \) -exec chmod 644 {} \;
 
-# just install this SlackBuild in /usr/docs
+# just install this SlackBuild slack-desc and slack-required in /usr/docs
 mkdir -p $PKG/usr/doc/$PRGNAM-$VERSION
 cat $CWD/$PRGNAM.SlackBuild > $PKG/usr/doc/$PRGNAM-$VERSION/$PRGNAM.SlackBuild
+cat $CWD/slack-desc > $PKG/usr/doc/$PRGNAM-$VERSION/slack-desc
+cat $CWD/slack-required > $PKG/usr/doc/$PRGNAM-$VERSION/slack-required
 
 mkdir -p $PKG/install
 cat $CWD/slack-desc > $PKG/install/slack-desc
