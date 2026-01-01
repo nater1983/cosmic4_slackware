@@ -22,12 +22,12 @@
 #  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 #  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c https://github.com/hughsie/libxmlb/archive/0.3.22/libxmlb-0.3.22.tar.gz
+wget -c https://github.com/hughsie/libxmlb/archive/0.3.24/libxmlb-0.3.24.tar.gz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=libxmlb
-VERSION=${VERSION:-0.3.22}
+VERSION=${VERSION:-0.3.24}
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
@@ -100,32 +100,11 @@ cd build
     -Dstemmer=false \
     -Dcli=true
   "${NINJA:=ninja}"
-  DESTDIR=$PKG $NINJA install
-cd ..
-
-find $PKG -print0 | xargs -0 file | grep -e "executable" -e "shared object" | grep ELF \
-  | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null || true
-
-# Compress and link manpages, if any:
-if [ -d $PKG/usr/man ]; then
-  ( cd $PKG/usr/man
-    for manpagedir in $(find . -type d -name "man*") ; do
-      ( cd $manpagedir
-        for eachpage in $( find . -type l -maxdepth 1) ; do
-          ln -s $( readlink $eachpage ).gz $eachpage.gz
-          rm $eachpage
-        done
-        gzip -9 *.*
-      )
-    done
-  )
-fi
-
-find $PKG/usr/man -type f -exec gzip -9 {} \;
-for i in $( find $PKG/usr/man -type l ) ; do ln -s $( readlink $i ).gz $i.gz ; rm $i ; done
+install -vDm 0644 src/Xmlb-2.0.gir -t $PKG/usr/share/gir-1.0
+install -vDm 0644 src/Xmlb-2.0.typelib -t $PKG/usr/lib64/girepository-1.0
 
 mkdir -p $PKG/usr/doc/$PRGNAM-$VERSION
-cp -a  README.md RELEASE NEWS MAINTAINERS LICENSE CODE_OF_CONDUCT.md \
+cp -a  README.md NEWS MAINTAINERS LICENSE \
   $PKG/usr/doc/$PRGNAM-$VERSION
 
 # Remove any systemd files if present
