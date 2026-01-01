@@ -51,6 +51,7 @@ directories=(
   "xdg-dbus-proxy"
   "xdg-desktop-portal-gtk"
   "libostree"
+  "bubblewrap"
   "flatpak"
   "cosmic-store"
   "cosmic-term"
