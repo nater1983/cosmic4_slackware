@@ -3,8 +3,8 @@
 # Array of project names and corresponding GitHub repository names
 declare -A repos=(
   ["cosmic-reader"]="cosmic-reader"
-  ["gtk-theme"]="gtk-theme" 
-  ["icon-theme"]="icon-theme"  
+  ["pop-gtk-theme"]="gtk-theme" 
+  ["pop-icon-theme"]="icon-theme"  
   ["fonts"]="fonts"
 )
 
