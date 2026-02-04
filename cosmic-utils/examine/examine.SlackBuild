@@ -22,13 +22,13 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c https://github.com/cosmic-utils/examine/archive/8a237c16c127028b7d3ddee28cd611014a91c1e3/examine-8a237c16c127028b7d3ddee28cd611014a91c1e3.tar.gz
+wget -c https://github.com/cosmic-utils/examine/archive/911e7124f88fc7e8357ca8547a0bd38b32bcf081/examine-911e7124f88fc7e8357ca8547a0bd38b32bcf081.tar.gz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=examine
-VERSION=20250520.8a237c1
-_commit=8a237c16c127028b7d3ddee28cd611014a91c1e3
+VERSION=20260131.911e712
+_commit=911e7124f88fc7e8357ca8547a0bd38b32bcf081
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
