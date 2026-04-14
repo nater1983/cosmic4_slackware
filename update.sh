@@ -219,6 +219,7 @@ for PRGNAM in "${!EXTRA_REPOS[@]}"; do
   SLACKBUILD="$ROOT_DIR/$PRGNAM/$PRGNAM.SlackBuild"
   if [ -f "$SLACKBUILD" ]; then
 #    sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$PRGNAM-$VERSION.tar.lz|" "$SLACKBUILD"
+    sed -i "s|^wget -c .*|wget -c http://10.7.0.45/linux/cosmic/tarballs/$PRGNAM-$VERSION.tar.lz|" "$SLACKBUILD"
     sed -i "s|^VERSION=.*|VERSION=$VERSION|" "$SLACKBUILD"
     sed -i "s|^_commit=.*|_commit=$VERSION|" "$SLACKBUILD"
     echo "Updated $SLACKBUILD with latest tag $VERSION ($_commit)"
