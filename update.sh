@@ -39,7 +39,8 @@ for PRGNAM in "${!repos[@]}"; do
   SLACKBUILD="$ROOT_DIR/$PRGNAM/$PRGNAM.SlackBuild"
   if [ -f "$SLACKBUILD" ]; then
     #sed -i "s|^wget -c .*|wget -c $GITHUB_BASE_URL/$REPO_NAME/archive/$_commit/$REPO_NAME-$_commit.tar.gz|" "$SLACKBUILD"
-    sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$REPO_NAME-$VERSION.tar.lz|" "$SLACKBUILD"
+#   sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$REPO_NAME-$VERSION.tar.lz|" "$SLACKBUILD"
+   sed -i "s|^wget -c .*|wget -c http://10.7.0.45/linux/cosmic/tarballs/$REPO_NAME-$VERSION.tar.lz|" "$SLACKBUILD"
     sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
     sed -i "s/^_commit=.*/_commit=${VERSION}/" "$SLACKBUILD"
     echo "Updated $SLACKBUILD with the latest version and commit."
@@ -112,7 +113,8 @@ for PRGNAM in "${!CORE_REPOS[@]}"; do
 
   SLACKBUILD="$ROOT_DIR/$PRGNAM/$PRGNAM.SlackBuild"
   if [ -f "$SLACKBUILD" ]; then
-    sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$PRGNAM-$VERSION.tar.lz|" "$SLACKBUILD"
+#    sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$PRGNAM-$VERSION.tar.lz|" "$SLACKBUILD"
+    sed -i "s|^wget -c .*|wget -c http://10.7.0.45/linux/cosmic/tarballs/$PRGNAM-$VERSION.tar.lz|" "$SLACKBUILD"
     sed -i "s/^VERSION=.*/VERSION=${VERSION}/" "$SLACKBUILD"
     sed -i "s/^_commit=.*/_commit=${VERSION}/" "$SLACKBUILD"
     echo "Updated $SLACKBUILD with latest tag $VERSION"
@@ -139,7 +141,8 @@ cd "$JUST_DIR"
 git fetch --tags
 VERSION=$(git describe --tags $(git rev-list --tags --max-count=1))  # Get the latest tag for version
 #TARBALL_URL="https://github.com/casey/just/archive/$VERSION/just-$VERSION.tar.gz"
-TARBALL_URL="https://reddoglinux.ddns.net/linux/cosmic/tarballs/just-$VERSION.tar.lz"
+#TARBALL_URL="https://reddoglinux.ddns.net/linux/cosmic/tarballs/just-$VERSION.tar.lz"
+TARBALL_URL="http://10.7.0.45/linux/cosmic/tarballs/just-$VERSION.tar.lz"
 
 # Remove .git directory and .gitignore files
 rm -rf .git
@@ -215,7 +218,7 @@ for PRGNAM in "${!EXTRA_REPOS[@]}"; do
 
   SLACKBUILD="$ROOT_DIR/$PRGNAM/$PRGNAM.SlackBuild"
   if [ -f "$SLACKBUILD" ]; then
-    sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$PRGNAM-$VERSION.tar.lz|" "$SLACKBUILD"
+#    sed -i "s|^wget -c .*|wget -c https://reddoglinux.ddns.net/linux/cosmic/tarballs/$PRGNAM-$VERSION.tar.lz|" "$SLACKBUILD"
     sed -i "s|^VERSION=.*|VERSION=$VERSION|" "$SLACKBUILD"
     sed -i "s|^_commit=.*|_commit=$VERSION|" "$SLACKBUILD"
     echo "Updated $SLACKBUILD with latest tag $VERSION ($_commit)"
