@@ -87,7 +87,7 @@ export VERGEN_GIT_SHA=$_commit
 export RUSTUP_TOOLCHAIN=stable
 cargo fetch
 RUSTFLAGS+=" -C link-arg=-fuse-ld=mold"
-just build-release --frozen
+just build-release
 just rootdir=$PKG install
 
 find $PKG -print0 | xargs -0 file | grep -e "executable" -e "shared object" | grep ELF \
