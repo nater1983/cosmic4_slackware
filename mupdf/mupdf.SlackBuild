@@ -214,8 +214,12 @@ ln -s ../icons/hicolor/48x48/apps/$PRGNAM.png $PKG/usr/share/pixmaps/$PRGNAM.png
 cp -a CONTRIBUTORS $PKG/usr/doc/$PRGNAM-$VERSION
 
 mkdir -p $PKG/install
+if [ -f $CWD/slack-required ]; then cat $CWD/slack-required > $PKG/install/slack-required; fi
 sed "s,@WITHTESS@,$WITHTESS," < $CWD/slack-desc > $PKG/install/slack-desc
+if [ -f $CWD/slack-suggests ]; then cat $CWD/slack-suggests > $PKG/install/slack-suggests; fi
+if [ -f $CWD/slack-conflicts ]; then cat $CWD/slack-conflicts > $PKG/install/slack-conflicts; fi
 cat $CWD/doinst.sh > $PKG/install/doinst.sh
 
 cd $PKG
+if [ -f $CWD/slack-required ]; then cat $CWD/slack-required > $PKG/usr/doc/$PRGNAM-$VERSION/slack-required; fi
 /sbin/makepkg -l y -c n $OUTPUT/$PRGNAM-$VERSION-$ARCH-$BUILD$TAG.$PKGTYPE
