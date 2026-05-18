@@ -9,7 +9,7 @@ index e4c32f1..b46006e 100644
 -git = "https://github.com/jackpot51/mupdf-rs"
 -branch = "0.5"
 +git = "https://github.com/messense/mupdf-rs"
-+branch = "0.6"
++branch = "main"
  optional = true
  
  [target.'cfg(unix)'.dependencies]
