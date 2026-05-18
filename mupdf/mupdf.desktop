@@ -1,17 +1,11 @@
 [Desktop Entry]
-Name=MuPDF
-GenericName=Document viewer
-Comment=PDF/CBZ/XPS file viewer
-Exec=mupdf %f
-TryExec=mupdf
+Name=Mupdf
+GenericName=PDF file viewer
+Comment=Lightweight PDF file viewer written on portable C
+Exec=mupdf-x11 %f
 Icon=mupdf
 Terminal=false
 Type=Application
-MimeType=application/pdf;application/x-pdf;application/x-cbz;application/vnd.ms-xpsdocument;application/oxps;
 Categories=Viewer;Graphics;
+MimeType=application/pdf;application/x-pdf;
 NoDisplay=true
-Actions=View;
-
-[Desktop Action View]
-Name=View
-Exec=mupdf %f
