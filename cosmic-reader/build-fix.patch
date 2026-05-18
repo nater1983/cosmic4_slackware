@@ -6,7 +6,7 @@ index e4c32f1..0ebad02 100644
  xdg-portal = ["libcosmic/xdg-portal"]
  wgpu = ["libcosmic/wgpu"]
  
-+[patch."https://github.com/jackpot51/mupdf-rs"]
++[patch."https://github.com/messense/mupdf-rs"]
 +mupdf = { path = "vendor/mupdf-rs" }
 +
  [profile.release-with-debug]
