@@ -196,6 +196,7 @@ done
 # - add mime types for cbz and xps.
 mkdir -p $PKG/usr/share/applications
 cat $CWD/$PRGNAM.desktop > $PKG/usr/share/applications/$PRGNAM.desktop
+cat $CWD/$PRGNAM-gl.desktop > $PKG/usr/share/applications/$PRGNAM-gl.desktop
 
 # Use shipped SVG icon, make PNGs at various sizes.
 mkdir -p $PKG/usr/share/pixmaps $PKG/usr/share/icons/hicolor/scalable/apps
