@@ -1,14 +1,15 @@
 diff --git a/Cargo.toml b/Cargo.toml
-index e4c32f1..0ebad02 100644
+index e4c32f1..b46006e 100644
 --- a/Cargo.toml
 +++ b/Cargo.toml
-@@ -52,6 +52,9 @@ sys-lib = ["mupdf?/sys-lib"]
- xdg-portal = ["libcosmic/xdg-portal"]
- wgpu = ["libcosmic/wgpu"]
+@@ -39,8 +39,8 @@ optional = true
+ # For mupdf feature
  
-+[patch."https://github.com/messense/mupdf-rs"]
-+mupdf = { path = "vendor/mupdf-rs" }
-+
- [profile.release-with-debug]
- inherits = "release"
- debug = true
+ [dependencies.mupdf]
+-git = "https://github.com/jackpot51/mupdf-rs"
+-branch = "0.5"
++git = "https://github.com/messense/mupdf-rs"
++branch = "0.6"
+ optional = true
+ 
+ [target.'cfg(unix)'.dependencies]
