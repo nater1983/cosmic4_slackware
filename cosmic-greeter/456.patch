@@ -1,0 +1,363 @@
+From a98e6fb88fbcec7fae2812e5ae3425f2e4e1e52b Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Nara=20D=C3=ADaz=20Vi=C3=B1olas?=
+ <nara.diaz.vinolas@gmail.com>
+Date: Fri, 15 May 2026 19:52:03 +0200
+Subject: [PATCH 1/3] fix: add systemd-homed reported uids to user filter
+
+---
+ Cargo.lock         | 11 +++++++++++
+ daemon/Cargo.toml  |  1 +
+ daemon/src/lib.rs  | 35 +++++++++++++++++++++++------------
+ daemon/src/main.rs |  4 ++--
+ 4 files changed, 37 insertions(+), 14 deletions(-)
+
+diff --git a/Cargo.lock b/Cargo.lock
+index 71d5b2d..37805e8 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -1306,6 +1306,7 @@ dependencies = [
+  "whitespace-conf",
+  "xdg",
+  "zbus",
++ "zbus_systemd",
+ ]
+ 
+ [[package]]
+@@ -8363,6 +8364,16 @@ dependencies = [
+  "zvariant",
+ ]
+ 
++[[package]]
++name = "zbus_systemd"
++version = "0.26000.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "40c8310483ff4a77492d04a90bef30f40938059b4a4b4f7e456dda335d816cb6"
++dependencies = [
++ "serde",
++ "zbus",
++]
++
+ [[package]]
+ name = "zbus_xml"
+ version = "5.1.1"
+diff --git a/daemon/Cargo.toml b/daemon/Cargo.toml
+index a229b05..44daa5f 100644
+--- a/daemon/Cargo.toml
++++ b/daemon/Cargo.toml
+@@ -28,6 +28,7 @@ whitespace-conf = "1"
+ #TODO: reduce features
+ tokio = { workspace = true, features = ["full"] }
+ xdg = "3.0"
++zbus_systemd = { version = "0.26000.0", features = ["home1"] }
+ 
+ [features]
+ default = ["systemd"]
+diff --git a/daemon/src/lib.rs b/daemon/src/lib.rs
+index 842aebe..45f184c 100644
+--- a/daemon/src/lib.rs
++++ b/daemon/src/lib.rs
+@@ -1,11 +1,13 @@
+ use cosmic_comp_config::output::randr;
+ use cosmic_config::CosmicConfigEntry;
+ use kdl::KdlDocument;
+-use std::collections::BTreeMap;
++use std::collections::{BTreeMap, BTreeSet};
+ use std::fs;
+ use std::io::Read;
+ use std::os::unix::fs::OpenOptionsExt;
+ use std::path::{Path, PathBuf};
++use zbus::Connection;
++use zbus_systemd::home1::ManagerProxy;
+ 
+ pub use cosmic_applets_config::time::TimeAppletConfig;
+ pub use cosmic_bg_config::state::State as BgState;
+@@ -16,13 +18,25 @@ pub use cosmic_theme::{Theme, ThemeBuilder};
+ pub struct UserFilter {
+     uid_min: u32,
+     uid_max: u32,
++    homed_uids: BTreeSet<u32>,
+ }
+ 
+-impl Default for UserFilter {
+-    fn default() -> Self {
++impl UserFilter {
++    pub async fn new() -> Result<Self, zbus::Error> {
+         let login_defs_data = fs::read_to_string("/etc/login.defs").unwrap_or_default();
+         let login_defs = whitespace_conf::parse(&login_defs_data);
+-        Self {
++
++        let connection = Connection::system().await?;
++        let homed = ManagerProxy::new(&connection).await?;
++
++        let homed_uids = homed
++            .list_homes()
++            .await?
++            .iter()
++            .map(|(_, uid, ..)| *uid)
++            .collect();
++
++        Ok(Self {
+             uid_min: login_defs
+                 .get("UID_MIN")
+                 .and_then(|x| x.parse::<u32>().ok())
+@@ -31,17 +45,14 @@ impl Default for UserFilter {
+                 .get("UID_MAX")
+                 .and_then(|x| x.parse::<u32>().ok())
+                 .unwrap_or(65000),
+-        }
+-    }
+-}
+-
+-impl UserFilter {
+-    pub fn new() -> Self {
+-        Self::default()
++            homed_uids,
++        })
+     }
+ 
+     pub fn filter(&self, user: &pwd::Passwd) -> bool {
+-        if user.uid < self.uid_min || user.uid > self.uid_max {
++        if (user.uid < self.uid_min || user.uid > self.uid_max)
++            && !self.homed_uids.contains(&user.uid)
++        {
+             // Skip system accounts
+             return false;
+         }
+diff --git a/daemon/src/main.rs b/daemon/src/main.rs
+index 427070a..a9d35b9 100644
+--- a/daemon/src/main.rs
++++ b/daemon/src/main.rs
+@@ -70,8 +70,8 @@ struct GreeterProxy;
+ 
+ #[zbus::interface(name = "com.system76.CosmicGreeter")]
+ impl GreeterProxy {
+-    fn get_user_data(&mut self) -> Result<String, GreeterError> {
+-        let user_filter = UserFilter::new();
++    async fn get_user_data(&mut self) -> Result<String, GreeterError> {
++        let user_filter = UserFilter::new().await?;
+ 
+         // The pwd::Passwd method is unsafe (but not labelled as such) due to using global state (libc pwent functions).
+         // To prevent issues, this should only be called once in the entire process space at a time
+
+From 50d0b61ac817132fec557481fe55b3b715854cf1 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Nara=20D=C3=ADaz=20Vi=C3=B1olas?=
+ <nara.diaz.vinolas@gmail.com>
+Date: Sun, 10 May 2026 12:23:13 +0200
+Subject: [PATCH 2/3] feat: load user icon and background from systemd-homed
+ paths as a fallback
+
+---
+ daemon/src/lib.rs | 80 +++++++++++++++++++++++++++++++----------------
+ 1 file changed, 53 insertions(+), 27 deletions(-)
+
+diff --git a/daemon/src/lib.rs b/daemon/src/lib.rs
+index 45f184c..23e36e5 100644
+--- a/daemon/src/lib.rs
++++ b/daemon/src/lib.rs
+@@ -112,6 +112,48 @@ impl UserData {
+         }
+     }
+ 
++    fn load_icon_as_user(&mut self) {
++        //TODO: use accountsservice?
++        let icon_paths = [
++            //IMPORTANT: This file is owned by root and safe to read (it won't be a link to /etc/shadow for example)
++            // It may not exist if the user uses one of the system icons. In that case, we should read the
++            // information in /var/lib/AccountsService/users, and then read the icon path as the user
++            Path::new("/var/lib/AccountsService/icons").join(&self.name),
++            // systemd-homed cache
++            Path::new("/var/cache/systemd/home")
++                .join(&self.name)
++                .join("avatar"),
++        ];
++
++        for icon_path in icon_paths {
++            match fs::OpenOptions::new()
++                .read(true)
++                // Do not follow symlinks
++                .custom_flags(libc::O_NOFOLLOW)
++                .open(&icon_path)
++            {
++                Ok(mut icon_file) => {
++                    let mut icon_data = Vec::new();
++                    match icon_file.read_to_end(&mut icon_data) {
++                        Ok(count) => {
++                            icon_data.truncate(count);
++                            self.icon_opt = Some(icon_data);
++                            return;
++                        }
++                        Err(err) => {
++                            tracing::error!("failed to read icon data {:?}: {:?}", icon_path, err);
++                        }
++                    }
++                }
++                Err(err) => {
++                    tracing::warn!("failed to open icon {:?}: {:?}", icon_path, err);
++                }
++            }
++        }
++
++        tracing::error!("failed to load icon for user {:?}", self.name)
++    }
++
+     pub fn load_config_as_user(&mut self) {
+         self.icon_opt = None;
+         self.theme_opt = None;
+@@ -120,33 +162,7 @@ impl UserData {
+         self.xkb_config_opt = None;
+         self.time_applet_config = Default::default();
+ 
+-        //TODO: use accountsservice?
+-        //IMPORTANT: This file is owned by root and safe to read (it won't be a link to /etc/shadow for example)
+-        // It may not exist if the user uses one of the system icons. In that case, we should read the
+-        // information in /var/lib/AccountsService/users, and then read the icon path as the user
+-        let icon_path = Path::new("/var/lib/AccountsService/icons").join(&self.name);
+-        match fs::OpenOptions::new()
+-            .read(true)
+-            // Do not follow symlinks
+-            .custom_flags(libc::O_NOFOLLOW)
+-            .open(&icon_path)
+-        {
+-            Ok(mut icon_file) => {
+-                let mut icon_data = Vec::new();
+-                match icon_file.read_to_end(&mut icon_data) {
+-                    Ok(count) => {
+-                        icon_data.truncate(count);
+-                        self.icon_opt = Some(icon_data);
+-                    }
+-                    Err(err) => {
+-                        tracing::error!("failed to read icon data {:?}: {:?}", icon_path, err);
+-                    }
+-                }
+-            }
+-            Err(err) => {
+-                tracing::error!("failed to open icon {:?}: {:?}", icon_path, err);
+-            }
+-        }
++        self.load_icon_as_user();
+ 
+         let mut is_dark = true;
+         match cosmic_theme::ThemeMode::config() {
+@@ -220,6 +236,16 @@ impl UserData {
+                 tracing::error!("failed to create cosmic-bg state helper: {:?}", err);
+             }
+         }
++        if self.bg_state.wallpapers.is_empty() {
++            self.bg_state.wallpapers.push((
++                String::new(),
++                BgSource::Path(
++                    Path::new("/var/cache/systemd/home")
++                        .join(&self.name)
++                        .join("login-background"),
++                ),
++            ));
++        }
+         self.load_wallpapers_as_user();
+ 
+         match cosmic_config::Config::new("com.system76.CosmicComp", CosmicCompConfig::VERSION) {
+
+From 03b57d0197fc0585da10674cd462ebeec58092be Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Nara=20D=C3=ADaz=20Vi=C3=B1olas?=
+ <nara.diaz.vinolas@gmail.com>
+Date: Fri, 22 May 2026 10:11:44 +0200
+Subject: [PATCH 3/3] chore: put systemd-homed extra support behind 'systemd'
+ feature
+
+---
+ daemon/Cargo.toml  |  4 ++--
+ daemon/src/lib.rs  | 30 +++++++++++++++++++++++-------
+ daemon/src/main.rs |  2 +-
+ 3 files changed, 26 insertions(+), 10 deletions(-)
+
+diff --git a/daemon/Cargo.toml b/daemon/Cargo.toml
+index 44daa5f..000ad41 100644
+--- a/daemon/Cargo.toml
++++ b/daemon/Cargo.toml
+@@ -28,8 +28,8 @@ whitespace-conf = "1"
+ #TODO: reduce features
+ tokio = { workspace = true, features = ["full"] }
+ xdg = "3.0"
+-zbus_systemd = { version = "0.26000.0", features = ["home1"] }
++zbus_systemd = { version = "0.26000.0", features = ["home1"], optional = true }
+ 
+ [features]
+ default = ["systemd"]
+-systemd = ["tracing-journald"]
++systemd = ["tracing-journald", "zbus_systemd"]
+diff --git a/daemon/src/lib.rs b/daemon/src/lib.rs
+index 23e36e5..c414474 100644
+--- a/daemon/src/lib.rs
++++ b/daemon/src/lib.rs
+@@ -7,7 +7,6 @@ use std::io::Read;
+ use std::os::unix::fs::OpenOptionsExt;
+ use std::path::{Path, PathBuf};
+ use zbus::Connection;
+-use zbus_systemd::home1::ManagerProxy;
+ 
+ pub use cosmic_applets_config::time::TimeAppletConfig;
+ pub use cosmic_bg_config::state::State as BgState;
+@@ -22,12 +21,12 @@ pub struct UserFilter {
+ }
+ 
+ impl UserFilter {
+-    pub async fn new() -> Result<Self, zbus::Error> {
+-        let login_defs_data = fs::read_to_string("/etc/login.defs").unwrap_or_default();
+-        let login_defs = whitespace_conf::parse(&login_defs_data);
++    #[cfg(feature = "systemd")]
++    async fn get_homed_uids() -> Result<BTreeSet<u32>, zbus::Error> {
++        use zbus_systemd::home1;
+ 
+         let connection = Connection::system().await?;
+-        let homed = ManagerProxy::new(&connection).await?;
++        let homed = home1::ManagerProxy::new(&connection).await?;
+ 
+         let homed_uids = homed
+             .list_homes()
+@@ -36,7 +35,24 @@ impl UserFilter {
+             .map(|(_, uid, ..)| *uid)
+             .collect();
+ 
+-        Ok(Self {
++        Ok(homed_uids)
++    }
++
++    pub async fn new() -> Self {
++        let login_defs_data = fs::read_to_string("/etc/login.defs").unwrap_or_default();
++        let login_defs = whitespace_conf::parse(&login_defs_data);
++
++        #[cfg(feature = "systemd")]
++        let homed_uids = Self::get_homed_uids()
++            .await
++            .inspect_err(|e| {
++                tracing::warn!("failed to list dynamic UIDs from systemd-homed: {e:?}")
++            })
++            .unwrap_or_default();
++        #[cfg(not(feature = "systemd"))]
++        let homed_uids = BTreeSet::new();
++
++        Self {
+             uid_min: login_defs
+                 .get("UID_MIN")
+                 .and_then(|x| x.parse::<u32>().ok())
+@@ -46,7 +62,7 @@ impl UserFilter {
+                 .and_then(|x| x.parse::<u32>().ok())
+                 .unwrap_or(65000),
+             homed_uids,
+-        })
++        }
+     }
+ 
+     pub fn filter(&self, user: &pwd::Passwd) -> bool {
+diff --git a/daemon/src/main.rs b/daemon/src/main.rs
+index a9d35b9..419a20d 100644
+--- a/daemon/src/main.rs
++++ b/daemon/src/main.rs
+@@ -71,7 +71,7 @@ struct GreeterProxy;
+ #[zbus::interface(name = "com.system76.CosmicGreeter")]
+ impl GreeterProxy {
+     async fn get_user_data(&mut self) -> Result<String, GreeterError> {
+-        let user_filter = UserFilter::new().await?;
++        let user_filter = UserFilter::new().await;
+ 
+         // The pwd::Passwd method is unsafe (but not labelled as such) due to using global state (libc pwent functions).
+         // To prevent issues, this should only be called once in the entire process space at a time
