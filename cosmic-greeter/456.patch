@@ -2,7 +2,7 @@ From a98e6fb88fbcec7fae2812e5ae3425f2e4e1e52b Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Nara=20D=C3=ADaz=20Vi=C3=B1olas?=
  <nara.diaz.vinolas@gmail.com>
 Date: Fri, 15 May 2026 19:52:03 +0200
-Subject: [PATCH 1/3] fix: add systemd-homed reported uids to user filter
+Subject: [PATCH 1/4] fix: add systemd-homed reported uids to user filter
 
 ---
  Cargo.lock         | 11 +++++++++++
@@ -143,7 +143,7 @@ From 50d0b61ac817132fec557481fe55b3b715854cf1 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Nara=20D=C3=ADaz=20Vi=C3=B1olas?=
  <nara.diaz.vinolas@gmail.com>
 Date: Sun, 10 May 2026 12:23:13 +0200
-Subject: [PATCH 2/3] feat: load user icon and background from systemd-homed
+Subject: [PATCH 2/4] feat: load user icon and background from systemd-homed
  paths as a fallback
 
 ---
@@ -260,7 +260,7 @@ From 03b57d0197fc0585da10674cd462ebeec58092be Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Nara=20D=C3=ADaz=20Vi=C3=B1olas?=
  <nara.diaz.vinolas@gmail.com>
 Date: Fri, 22 May 2026 10:11:44 +0200
-Subject: [PATCH 3/3] chore: put systemd-homed extra support behind 'systemd'
+Subject: [PATCH 3/4] chore: put systemd-homed extra support behind 'systemd'
  feature
 
 ---
@@ -361,3 +361,38 @@ index a9d35b9..419a20d 100644
  
          // The pwd::Passwd method is unsafe (but not labelled as such) due to using global state (libc pwent functions).
          // To prevent issues, this should only be called once in the entire process space at a time
+
+From dca7a43ec91a3f39304c6bb6af0991bead99fdf4 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Nara=20D=C3=ADaz=20Vi=C3=B1olas?=
+ <nara.diaz.vinolas@gmail.com>
+Date: Sat, 23 May 2026 19:23:13 +0200
+Subject: [PATCH 4/4] fix: compilation error on greeter bin
+
+---
+ src/greeter.rs | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/greeter.rs b/src/greeter.rs
+index 51fe4b2..0e99b9a 100644
+--- a/src/greeter.rs
++++ b/src/greeter.rs
+@@ -76,8 +76,8 @@ async fn user_data_dbus() -> Result<Vec<UserData>, Box<dyn Error>> {
+     Ok(user_datas)
+ }
+ 
+-fn user_data_fallback() -> Vec<UserData> {
+-    let user_filter = UserFilter::new();
++async fn user_data_fallback() -> Vec<UserData> {
++    let user_filter = UserFilter::new().await;
+ 
+     // The pwd::Passwd method is unsafe (but not labelled as such) due to using global state (libc pwent functions).
+     /* unsafe */
+@@ -129,7 +129,7 @@ pub fn main() -> Result<(), Box<dyn Error>> {
+         Ok(ok) => ok,
+         Err(err) => {
+             tracing::error!("failed to load user data from daemon: {}", err);
+-            user_data_fallback()
++            runtime.block_on(user_data_fallback())
+         }
+     };
+ 
