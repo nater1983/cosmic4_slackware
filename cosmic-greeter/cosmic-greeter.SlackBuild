@@ -94,7 +94,7 @@ export VERGEN_GIT_SHA=$_commit
 export RUSTUP_TOOLCHAIN=stable
 cargo fetch --locked
 RUSTFLAGS+=" -C link-arg=-fuse-ld=mold"
-just build-release
+just build-release --frozen
 just rootdir=$PKG install
 
 install -Dm644 "$PRGNAM.toml" -t "$PKG/etc/greetd/"
