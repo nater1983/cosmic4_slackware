@@ -22,13 +22,13 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c http://10.7.0.45/linux/cosmic/tarballs/cosmic-reader-20260512.0dde6ae.tar.lz
+wget -c http://10.7.0.45/linux/cosmic/tarballs/cosmic-reader-20260520.c29b3e8.tar.lz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=cosmic-reader
-VERSION=20260512.0dde6ae
-_commit=20260512.0dde6ae
+VERSION=20260520.c29b3e8
+_commit=20260520.c29b3e8
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
