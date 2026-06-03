@@ -78,6 +78,7 @@ declare -A CORE_REPOS=(
   ["cosmic-term"]="cosmic-term"
   ["cosmic-store"]="cosmic-store"
   ["cosmic-workspaces-epoch"]="cosmic-workspaces-epoch"
+  ["launcher"]="launcher"
   ["system76-power"]="system76-power"
   ["xdg-desktop-portal-cosmic"]="xdg-desktop-portal-cosmic"
 
@@ -129,46 +130,6 @@ done
 
 echo "All projects have been processed and archives created."
 
-# Handling the 'launcher' repository separately
-LAUNCHER_REPO="https://github.com/pop-os/launcher.git"
-LAUNCHER_REPO_NAME="launcher"
-LAUNCHER_DIR=$(mktemp -dt "$LAUNCHER_REPO_NAME.git.XXXXXX")
-git clone --depth 1 "$LAUNCHER_REPO" "$LAUNCHER_DIR"
-
-cd "$LAUNCHER_DIR"
-git fetch --tags
-VERSION=$(git describe --tags $(git rev-list --tags --max-count=1))  # Get the latest tag for version
-#TARBALL_URL="https://github.com/casey/just/archive/$VERSION/launcher-$VERSION.tar.gz"
-#TARBALL_URL="https://reddoglinux.ddns.net/linux/cosmic/tarballs/launcher-$VERSION.tar.lz"
-TARBALL_URL="http://10.7.0.45/linux/cosmic/tarballs/launcher-$VERSION.tar.lz"
-
-# Remove .git directory and .gitignore files
-rm -rf .git
-find . -name .gitignore -print0 | xargs -0 rm -f
-
-cd "$ROOT_DIR"
-
-# Update the SlackBuild script in the project directory for 'launcher'
-SLACKBUILD="$ROOT_DIR/$LAUNCHER_REPO_NAME/$LAUNCHER_REPO_NAME.SlackBuild"
-if [ -f "$SLACKBUILD" ]; then
-  # Update the wget line
-  sed -i "s|^wget -c .*|wget -c $TARBALL_URL|" "$SLACKBUILD"
-
-  # Update the VERSION line with no fallback
-  sed -i "s|^VERSION=.*|VERSION=$VERSION|" "$SLACKBUILD"
-
-  echo "Updated $SLACKBUILD with the latest version and commit."
-else
-  echo "SlackBuild script not found in $ROOT_DIR/$LAUNCHER_REPO_NAME. Skipping update for $LAUNCHER_REPO_NAME."
-fi
-
-# Create a tarball
-mv "$LAUNCHER_DIR" "$LAUNCHER_REPO_NAME-$VERSION"
-tar --lzip -cvf "$LAUNCHER_REPO_NAME-$VERSION.tar.lz" "$LAUNCHER_REPO_NAME-$VERSION"
-rm -rf "$LAUNCHER_REPO_NAME-$VERSION"
-mv $LAUNCHER_REPO_NAME-$VERSION.tar.lz /opt/htdocs/linux/cosmic/tarballs/
-
-echo "The 'launcher' repository has been processed, archived as $LAUNCHER_REPO_NAME-$VERSION.tar.xz, and cleaned up."
 
 # Handling the 'just' repository separately
 JUST_REPO="https://github.com/casey/just.git"
