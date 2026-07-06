@@ -1,0 +1,4090 @@
+From b9cb8c47398dea7bee510bcdef0acc1c19461916 Mon Sep 17 00:00:00 2001
+From: Ian Douglas Scott <idscott@system76.com>
+Date: Wed, 8 May 2024 21:16:10 -0700
+Subject: [PATCH 01/22] WIP Ei protocol support
+
+libei: Update for new API
+
+update
+
+Handle error
+
+cargo
+---
+ src/lib.rs   |  3 +++
+ src/libei.rs | 46 ++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 49 insertions(+)
+ create mode 100644 src/libei.rs
+
+diff --git a/src/lib.rs b/src/lib.rs
+index 09d1b961a..6f978ac65 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -41,6 +41,7 @@ pub mod dbus;
+ pub mod debug;
+ pub mod hooks;
+ pub mod input;
++pub mod libei;
+ mod logger;
+ pub mod session;
+ pub mod shell;
+@@ -173,6 +174,8 @@ pub fn run(hooks: crate::hooks::Hooks) -> Result<(), Box<dyn Error>> {
+     // init backend
+     backend::init_backend_auto(&display, &mut event_loop, &mut state)?;
+ 
++    libei::listen_eis(&event_loop.handle());
++
+     if let Err(err) = theme::watch_theme(event_loop.handle()) {
+         warn!(?err, "Failed to watch theme");
+     }
+diff --git a/src/libei.rs b/src/libei.rs
+new file mode 100644
+index 000000000..c0c1ed3e7
+--- /dev/null
++++ b/src/libei.rs
+@@ -0,0 +1,46 @@
++use reis::calloop::EisListenerSource;
++use reis::eis;
++use smithay::reexports::reis;
++
++use smithay::backend::libei::{EiInput, EiInputEvent};
++use smithay::input::keyboard::XkbConfig;
++use smithay::reexports::calloop;
++
++use crate::state::State;
++
++pub fn listen_eis(handle: &calloop::LoopHandle<'static, State>) {
++    let listener = match eis::Listener::bind_auto() {
++        Ok(listener) => listener,
++        Err(err) => {
++            tracing::error!("Failed to bind EI listener socket: {}", err);
++            return;
++        }
++    };
++
++    unsafe { std::env::set_var("LIBEI_SOCKET", listener.path()) };
++
++    let listener_source = EisListenerSource::new(listener);
++    let handle_clone = handle.clone();
++    handle
++        .insert_source(listener_source, move |context, _, _| {
++            let source = EiInput::new(context);
++            handle_clone
++                .insert_source(source, |event, connection, data| match event {
++                    EiInputEvent::Connected => {
++                        let seat = connection.add_seat("default");
++                        // TODO config
++                        let _ = seat.add_keyboard("virtual keyboard", XkbConfig::default());
++                        seat.add_pointer("virtual pointer");
++                        seat.add_pointer_absolute("virtual absoulte pointer");
++                        seat.add_touch("virtual touch");
++                    }
++                    EiInputEvent::Disconnected => {}
++                    EiInputEvent::Event(event) => {
++                        data.process_input_event(event);
++                    }
++                })
++                .unwrap();
++            Ok(calloop::PostAction::Continue)
++        })
++        .unwrap();
++}
+
+From 9631d9dedab1e8247a271ecdf72d77b2ad07a43a Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Fri, 5 Jun 2026 10:42:19 -0600
+Subject: [PATCH 02/22] fix: use the configured keyboard layout
+
+---
+ src/libei.rs | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/src/libei.rs b/src/libei.rs
+index c0c1ed3e7..6159b4ffa 100644
+--- a/src/libei.rs
++++ b/src/libei.rs
+@@ -3,9 +3,9 @@ use reis::eis;
+ use smithay::reexports::reis;
+ 
+ use smithay::backend::libei::{EiInput, EiInputEvent};
+-use smithay::input::keyboard::XkbConfig;
+ use smithay::reexports::calloop;
+ 
++use crate::config::xkb_config_to_wl;
+ use crate::state::State;
+ 
+ pub fn listen_eis(handle: &calloop::LoopHandle<'static, State>) {
+@@ -28,10 +28,10 @@ pub fn listen_eis(handle: &calloop::LoopHandle<'static, State>) {
+                 .insert_source(source, |event, connection, data| match event {
+                     EiInputEvent::Connected => {
+                         let seat = connection.add_seat("default");
+-                        // TODO config
+-                        let _ = seat.add_keyboard("virtual keyboard", XkbConfig::default());
++                        let conf = data.common.config.xkb_config();
++                        let _ = seat.add_keyboard("virtual keyboard", xkb_config_to_wl(&conf));
+                         seat.add_pointer("virtual pointer");
+-                        seat.add_pointer_absolute("virtual absoulte pointer");
++                        seat.add_pointer_absolute("virtual absolute pointer");
+                         seat.add_touch("virtual touch");
+                     }
+                     EiInputEvent::Disconnected => {}
+
+From c23c4cf343d9d386502c619adb29fdb47bdccda1 Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Fri, 5 Jun 2026 12:32:49 -0600
+Subject: [PATCH 03/22] feat: dbus interface for ei
+
+---
+ src/dbus/ei.rs  | 57 +++++++++++++++++++++++++++++++++++++++++++++++++
+ src/dbus/mod.rs | 13 +++++++++++
+ src/lib.rs      |  6 ++++--
+ src/libei.rs    |  8 ++++---
+ src/xwayland.rs |  2 +-
+ 5 files changed, 80 insertions(+), 6 deletions(-)
+ create mode 100644 src/dbus/ei.rs
+
+diff --git a/src/dbus/ei.rs b/src/dbus/ei.rs
+new file mode 100644
+index 000000000..53ae9ecb0
+--- /dev/null
++++ b/src/dbus/ei.rs
+@@ -0,0 +1,57 @@
++use std::sync::{Arc, Mutex};
++use zbus::names::{UniqueName, WellKnownName};
++
++use super::name_owners::NameOwners;
++
++static ALLOWED_NAMES: &[WellKnownName] = &[WellKnownName::from_static_str_unchecked(
++    "org.freedesktop.impl.portal.desktop.cosmic",
++)];
++
++struct Ei {
++    socket_path: Arc<Mutex<Option<String>>>,
++    name_owners: NameOwners,
++}
++
++impl Ei {
++    async fn check_sender_allowed(&self, sender: &UniqueName<'_>) -> zbus::fdo::Result<()> {
++        if self.name_owners.check_owner(sender, ALLOWED_NAMES).await {
++            Ok(())
++        } else {
++            Err(zbus::fdo::Error::AccessDenied("Access denied".to_string()))
++        }
++    }
++}
++
++#[zbus::interface(name = "com.system76.CosmicComp.Ei")]
++impl Ei {
++    async fn get_socket_path(
++        &self,
++        #[zbus(header)] header: zbus::message::Header<'_>,
++    ) -> zbus::fdo::Result<String> {
++        if let Some(sender) = header.sender() {
++            self.check_sender_allowed(sender).await?;
++        }
++        self.socket_path
++            .lock()
++            .unwrap()
++            .clone()
++            .ok_or_else(|| zbus::fdo::Error::Failed("EIS listener not available".to_string()))
++    }
++}
++
++/// Register the `com.system76.CosmicComp.Ei` interface on the shared session connection.
++pub async fn init(
++    conn: &zbus::Connection,
++    name_owners: &NameOwners,
++    socket_path: Arc<Mutex<Option<String>>>,
++) -> zbus::Result<()> {
++    let ei = Ei {
++        socket_path,
++        name_owners: name_owners.clone(),
++    };
++    conn.object_server()
++        .at("/com/system76/CosmicComp/Ei", ei)
++        .await?;
++    conn.request_name("com.system76.CosmicComp").await?;
++    Ok(())
++}
+diff --git a/src/dbus/mod.rs b/src/dbus/mod.rs
+index 5b9754c3d..44375c4e2 100644
+--- a/src/dbus/mod.rs
++++ b/src/dbus/mod.rs
+@@ -9,11 +9,13 @@ use std::{
+     cell::{RefCell, RefMut},
+     collections::HashMap,
+     rc::Rc,
++    sync::{Arc, Mutex},
+ };
+ use tracing::{error, warn};
+ 
+ pub mod a11y_keyboard_monitor;
+ use a11y_keyboard_monitor::A11yKeyboardMonitorState;
++pub mod ei;
+ #[cfg(feature = "logind")]
+ pub mod logind;
+ mod name_owners;
+@@ -29,6 +31,10 @@ struct DBusStateInner {
+     session_conn: zbus::Result<zbus::Connection>,
+     system_conn: zbus::Result<zbus::Connection>,
+     a11y_keyboard_monitor: RefCell<Option<a11y_keyboard_monitor::A11yKeyboardMonitorState>>,
++    // Socket path advertised by the `com.system76.CosmicComp.Ei` interface. Shared with the
++    // registered `Ei` object so it can be set after the EIS listener is bound, independent of
++    // when the interface finishes registering on the shared session connection.
++    ei_socket_path: Arc<Mutex<Option<String>>>,
+ }
+ 
+ impl DBusState {
+@@ -42,6 +48,7 @@ impl DBusState {
+             session_conn,
+             system_conn,
+             a11y_keyboard_monitor: RefCell::new(None),
++            ei_socket_path: Arc::new(Mutex::new(None)),
+         }));
+         evlh.insert_source(source, |_, _, _| {}).unwrap();
+         let state_clone = state.clone();
+@@ -65,6 +72,11 @@ impl DBusState {
+         RefMut::filter_map(self.0.a11y_keyboard_monitor.borrow_mut(), |x| x.as_mut()).ok()
+     }
+ 
++    /// Set the EIS socket path advertised by the `com.system76.CosmicComp.Ei` interface.
++    pub fn set_ei_socket_path(&self, path: Option<String>) {
++        *self.0.ei_socket_path.lock().unwrap() = path;
++    }
++
+     // TODO Lazy async init when we don't have anything blocking main thread
+     async fn session_conn(&self) -> zbus::Result<&zbus::Connection> {
+         self.0.session_conn.as_ref().map_err(|err| err.clone())
+@@ -85,6 +97,7 @@ async fn init_session(state: &DBusState) -> zbus::Result<()> {
+     let a11y_keyboard_monitor_state =
+         A11yKeyboardMonitorState::new(conn, &name_owners, &state.0.executor).await?;
+     *state.0.a11y_keyboard_monitor.borrow_mut() = Some(a11y_keyboard_monitor_state);
++    ei::init(conn, &name_owners, state.0.ei_socket_path.clone()).await?;
+     Ok(())
+ }
+ 
+diff --git a/src/lib.rs b/src/lib.rs
+index 6f978ac65..edc9d21f2 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -171,11 +171,13 @@ pub fn run(hooks: crate::hooks::Hooks) -> Result<(), Box<dyn Error>> {
+         event_loop.get_signal(),
+         with_xwayland,
+     );
++    // Start the libei EIS before the backend spawns Xwayland.
++    let eis_socket_path = libei::listen_eis(&event_loop.handle());
++    state.common.dbus_state.set_ei_socket_path(eis_socket_path);
++
+     // init backend
+     backend::init_backend_auto(&display, &mut event_loop, &mut state)?;
+ 
+-    libei::listen_eis(&event_loop.handle());
+-
+     if let Err(err) = theme::watch_theme(event_loop.handle()) {
+         warn!(?err, "Failed to watch theme");
+     }
+diff --git a/src/libei.rs b/src/libei.rs
+index 6159b4ffa..2380f6192 100644
+--- a/src/libei.rs
++++ b/src/libei.rs
+@@ -8,16 +8,16 @@ use smithay::reexports::calloop;
+ use crate::config::xkb_config_to_wl;
+ use crate::state::State;
+ 
+-pub fn listen_eis(handle: &calloop::LoopHandle<'static, State>) {
++pub fn listen_eis(handle: &calloop::LoopHandle<'static, State>) -> Option<String> {
+     let listener = match eis::Listener::bind_auto() {
+         Ok(listener) => listener,
+         Err(err) => {
+             tracing::error!("Failed to bind EI listener socket: {}", err);
+-            return;
++            return None;
+         }
+     };
+ 
+-    unsafe { std::env::set_var("LIBEI_SOCKET", listener.path()) };
++    let socket_path = listener.path().to_string_lossy().into_owned();
+ 
+     let listener_source = EisListenerSource::new(listener);
+     let handle_clone = handle.clone();
+@@ -43,4 +43,6 @@ pub fn listen_eis(handle: &calloop::LoopHandle<'static, State>) {
+             Ok(calloop::PostAction::Continue)
+         })
+         .unwrap();
++
++    Some(socket_path)
+ }
+diff --git a/src/xwayland.rs b/src/xwayland.rs
+index aba65ef52..d2effb96a 100644
+--- a/src/xwayland.rs
++++ b/src/xwayland.rs
+@@ -115,7 +115,7 @@ impl State {
+             &self.common.display_handle,
+             None,
+             std::iter::empty::<(OsString, OsString)>(),
+-            std::iter::empty::<OsString>(),
++            ["-enable-ei-portal"],
+             true,
+             Stdio::null(),
+             Stdio::null(),
+
+From 3f4d4819bdae448aef9518921c1317331e4fd713 Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Tue, 16 Jun 2026 09:05:21 -0600
+Subject: [PATCH 04/22] UPDATE ME: chore: update smithay
+
+---
+ Cargo.lock | 20 ++++++++++----------
+ Cargo.toml |  3 ++-
+ 2 files changed, 12 insertions(+), 11 deletions(-)
+
+diff --git a/Cargo.lock b/Cargo.lock
+index 1bc589588..647209253 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -1204,7 +1204,7 @@ dependencies = [
+  "libc",
+  "option-ext",
+  "redox_users",
+- "windows-sys 0.61.2",
++ "windows-sys 0.60.2",
+ ]
+ 
+ [[package]]
+@@ -1518,7 +1518,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
+ dependencies = [
+  "libc",
+- "windows-sys 0.61.2",
++ "windows-sys 0.52.0",
+ ]
+ 
+ [[package]]
+@@ -2688,7 +2688,7 @@ dependencies = [
+  "portable-atomic",
+  "portable-atomic-util",
+  "serde_core",
+- "windows-sys 0.61.2",
++ "windows-sys 0.52.0",
+ ]
+ 
+ [[package]]
+@@ -2811,7 +2811,7 @@ version = "1.4.1"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "770919970f7d2f74fea948900d35e2ef64f44129e8ae4015f59de1f0aca7c2a5"
+ dependencies = [
+- "windows-sys 0.61.2",
++ "windows-sys 0.60.2",
+ ]
+ 
+ [[package]]
+@@ -3421,7 +3421,7 @@ version = "0.50.3"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
+ dependencies = [
+- "windows-sys 0.61.2",
++ "windows-sys 0.60.2",
+ ]
+ 
+ [[package]]
+@@ -4489,7 +4489,7 @@ dependencies = [
+  "errno",
+  "libc",
+  "linux-raw-sys 0.4.15",
+- "windows-sys 0.59.0",
++ "windows-sys 0.52.0",
+ ]
+ 
+ [[package]]
+@@ -4502,7 +4502,7 @@ dependencies = [
+  "errno",
+  "libc",
+  "linux-raw-sys 0.12.1",
+- "windows-sys 0.61.2",
++ "windows-sys 0.52.0",
+ ]
+ 
+ [[package]]
+@@ -4797,7 +4797,7 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+ [[package]]
+ name = "smithay"
+ version = "0.7.0"
+-source = "git+https://github.com/smithay/smithay.git?rev=8eb4076#8eb4076cad8705c56f5e3bac8577b83576b6ce76"
++source = "git+https://github.com/hojjatabdollahi/smithay?branch=hojjat%2Fei_text#3040324b73a4951bd1643ed862891dbe692f73f4"
+ dependencies = [
+  "aliasable",
+  "appendlist",
+@@ -5094,7 +5094,7 @@ dependencies = [
+  "getrandom 0.4.1",
+  "once_cell",
+  "rustix 1.1.4",
+- "windows-sys 0.61.2",
++ "windows-sys 0.52.0",
+ ]
+ 
+ [[package]]
+@@ -6113,7 +6113,7 @@ version = "0.1.11"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
+ dependencies = [
+- "windows-sys 0.61.2",
++ "windows-sys 0.52.0",
+ ]
+ 
+ [[package]]
+diff --git a/Cargo.toml b/Cargo.toml
+index f1a04f029..6189f777e 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -95,6 +95,7 @@ features = [
+     "backend_drm",
+     "backend_gbm",
+     "backend_egl",
++    "backend_libei",
+     "backend_libinput",
+     "backend_session_libseat",
+     "backend_udev",
+@@ -143,4 +144,4 @@ cosmic-protocols = { git = "https://github.com/pop-os//cosmic-protocols", branch
+ cosmic-client-toolkit = { git = "https://github.com/pop-os//cosmic-protocols", branch = "main" }
+ 
+ [patch.crates-io]
+-smithay = { git = "https://github.com/smithay/smithay.git", rev = "8eb4076" }
++smithay = { git = "https://github.com/hojjatabdollahi/smithay", branch= "hojjat/ei_text" }
+
+From c6678c3a0bb28ccd37da1563b9721a362230c137 Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Tue, 16 Jun 2026 14:49:21 -0600
+Subject: [PATCH 05/22] feat: add Ei socketpair and update the dbus interface
+
+---
+ src/dbus/ei.rs  | 43 ++++++++++++++++++++++++++++++++-----------
+ src/dbus/mod.rs | 14 +++++---------
+ src/lib.rs      |  6 +++---
+ src/libei.rs    | 44 ++++++++++++++++++++++++--------------------
+ 4 files changed, 64 insertions(+), 43 deletions(-)
+
+diff --git a/src/dbus/ei.rs b/src/dbus/ei.rs
+index 53ae9ecb0..7eb5d88cd 100644
+--- a/src/dbus/ei.rs
++++ b/src/dbus/ei.rs
+@@ -1,4 +1,9 @@
+-use std::sync::{Arc, Mutex};
++use std::{
++    os::unix::net::UnixStream,
++    sync::{Arc, Mutex},
++};
++
++use smithay::reexports::calloop;
+ use zbus::names::{UniqueName, WellKnownName};
+ 
+ use super::name_owners::NameOwners;
+@@ -7,8 +12,12 @@ static ALLOWED_NAMES: &[WellKnownName] = &[WellKnownName::from_static_str_unchec
+     "org.freedesktop.impl.portal.desktop.cosmic",
+ )];
+ 
++/// Channel for handing the EI socketpair
++/// It's `None` until the EI sender side has been set up
++type EiSender = Arc<Mutex<Option<calloop::channel::Sender<UnixStream>>>>;
++
+ struct Ei {
+-    socket_path: Arc<Mutex<Option<String>>>,
++    ei_sender: EiSender,
+     name_owners: NameOwners,
+ }
+ 
+@@ -24,18 +33,30 @@ impl Ei {
+ 
+ #[zbus::interface(name = "com.system76.CosmicComp.Ei")]
+ impl Ei {
+-    async fn get_socket_path(
++    /// Create a new EI sender context
++    async fn get_sender_socket(
+         &self,
+         #[zbus(header)] header: zbus::message::Header<'_>,
+-    ) -> zbus::fdo::Result<String> {
++    ) -> zbus::fdo::Result<zbus::zvariant::OwnedFd> {
+         if let Some(sender) = header.sender() {
+             self.check_sender_allowed(sender).await?;
+         }
+-        self.socket_path
+-            .lock()
+-            .unwrap()
+-            .clone()
+-            .ok_or_else(|| zbus::fdo::Error::Failed("EIS listener not available".to_string()))
++
++        let (comp_stream, client_stream) = UnixStream::pair().map_err(|err| {
++            zbus::fdo::Error::Failed(format!("Failed to create socket pair: {err}"))
++        })?;
++
++        {
++            let guard = self.ei_sender.lock().unwrap();
++            let sender = guard
++                .as_ref()
++                .ok_or_else(|| zbus::fdo::Error::Failed("EI sender not available".to_string()))?;
++            sender.send(comp_stream).map_err(|err| {
++                zbus::fdo::Error::Failed(format!("Failed to hand off EI socket: {err}"))
++            })?;
++        }
++
++        Ok(std::os::fd::OwnedFd::from(client_stream).into())
+     }
+ }
+ 
+@@ -43,10 +64,10 @@ impl Ei {
+ pub async fn init(
+     conn: &zbus::Connection,
+     name_owners: &NameOwners,
+-    socket_path: Arc<Mutex<Option<String>>>,
++    ei_sender: EiSender,
+ ) -> zbus::Result<()> {
+     let ei = Ei {
+-        socket_path,
++        ei_sender,
+         name_owners: name_owners.clone(),
+     };
+     conn.object_server()
+diff --git a/src/dbus/mod.rs b/src/dbus/mod.rs
+index 44375c4e2..bfc13386e 100644
+--- a/src/dbus/mod.rs
++++ b/src/dbus/mod.rs
+@@ -31,10 +31,7 @@ struct DBusStateInner {
+     session_conn: zbus::Result<zbus::Connection>,
+     system_conn: zbus::Result<zbus::Connection>,
+     a11y_keyboard_monitor: RefCell<Option<a11y_keyboard_monitor::A11yKeyboardMonitorState>>,
+-    // Socket path advertised by the `com.system76.CosmicComp.Ei` interface. Shared with the
+-    // registered `Ei` object so it can be set after the EIS listener is bound, independent of
+-    // when the interface finishes registering on the shared session connection.
+-    ei_socket_path: Arc<Mutex<Option<String>>>,
++    ei_sender: Arc<Mutex<Option<calloop::channel::Sender<std::os::unix::net::UnixStream>>>>,
+ }
+ 
+ impl DBusState {
+@@ -48,7 +45,7 @@ impl DBusState {
+             session_conn,
+             system_conn,
+             a11y_keyboard_monitor: RefCell::new(None),
+-            ei_socket_path: Arc::new(Mutex::new(None)),
++            ei_sender: Arc::new(Mutex::new(None)),
+         }));
+         evlh.insert_source(source, |_, _, _| {}).unwrap();
+         let state_clone = state.clone();
+@@ -72,9 +69,8 @@ impl DBusState {
+         RefMut::filter_map(self.0.a11y_keyboard_monitor.borrow_mut(), |x| x.as_mut()).ok()
+     }
+ 
+-    /// Set the EIS socket path advertised by the `com.system76.CosmicComp.Ei` interface.
+-    pub fn set_ei_socket_path(&self, path: Option<String>) {
+-        *self.0.ei_socket_path.lock().unwrap() = path;
++    pub fn set_ei_sender(&self, sender: calloop::channel::Sender<std::os::unix::net::UnixStream>) {
++        *self.0.ei_sender.lock().unwrap() = Some(sender);
+     }
+ 
+     // TODO Lazy async init when we don't have anything blocking main thread
+@@ -97,7 +93,7 @@ async fn init_session(state: &DBusState) -> zbus::Result<()> {
+     let a11y_keyboard_monitor_state =
+         A11yKeyboardMonitorState::new(conn, &name_owners, &state.0.executor).await?;
+     *state.0.a11y_keyboard_monitor.borrow_mut() = Some(a11y_keyboard_monitor_state);
+-    ei::init(conn, &name_owners, state.0.ei_socket_path.clone()).await?;
++    ei::init(conn, &name_owners, state.0.ei_sender.clone()).await?;
+     Ok(())
+ }
+ 
+diff --git a/src/lib.rs b/src/lib.rs
+index edc9d21f2..7ee54d68c 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -171,9 +171,9 @@ pub fn run(hooks: crate::hooks::Hooks) -> Result<(), Box<dyn Error>> {
+         event_loop.get_signal(),
+         with_xwayland,
+     );
+-    // Start the libei EIS before the backend spawns Xwayland.
+-    let eis_socket_path = libei::listen_eis(&event_loop.handle());
+-    state.common.dbus_state.set_ei_socket_path(eis_socket_path);
++    // Set up the libei sender side before the backend spawns Xwayland.
++    let ei_sender = libei::setup_ei(&event_loop.handle());
++    state.common.dbus_state.set_ei_sender(ei_sender);
+ 
+     // init backend
+     backend::init_backend_auto(&display, &mut event_loop, &mut state)?;
+diff --git a/src/libei.rs b/src/libei.rs
+index 2380f6192..d30f5b581 100644
+--- a/src/libei.rs
++++ b/src/libei.rs
+@@ -1,4 +1,5 @@
+-use reis::calloop::EisListenerSource;
++use std::os::unix::net::UnixStream;
++
+ use reis::eis;
+ use smithay::reexports::reis;
+ 
+@@ -8,24 +9,26 @@ use smithay::reexports::calloop;
+ use crate::config::xkb_config_to_wl;
+ use crate::state::State;
+ 
+-pub fn listen_eis(handle: &calloop::LoopHandle<'static, State>) -> Option<String> {
+-    let listener = match eis::Listener::bind_auto() {
+-        Ok(listener) => listener,
+-        Err(err) => {
+-            tracing::error!("Failed to bind EI listener socket: {}", err);
+-            return None;
+-        }
+-    };
+-
+-    let socket_path = listener.path().to_string_lossy().into_owned();
+-
+-    let listener_source = EisListenerSource::new(listener);
++pub fn setup_ei(
++    handle: &calloop::LoopHandle<'static, State>,
++) -> calloop::channel::Sender<UnixStream> {
++    let (sender, channel) = calloop::channel::channel::<UnixStream>();
+     let handle_clone = handle.clone();
+     handle
+-        .insert_source(listener_source, move |context, _, _| {
++        .insert_source(channel, move |event, _, _| {
++            let calloop::channel::Event::Msg(stream) = event else {
++                return;
++            };
++            let context = match eis::Context::new(stream) {
++                Ok(context) => context,
++                Err(err) => {
++                    tracing::error!("Failed to create EI context: {}", err);
++                    return;
++                }
++            };
+             let source = EiInput::new(context);
+-            handle_clone
+-                .insert_source(source, |event, connection, data| match event {
++            if let Err(err) =
++                handle_clone.insert_source(source, |event, connection, data| match event {
+                     EiInputEvent::Connected => {
+                         let seat = connection.add_seat("default");
+                         let conf = data.common.config.xkb_config();
+@@ -39,10 +42,11 @@ pub fn listen_eis(handle: &calloop::LoopHandle<'static, State>) -> Option<String
+                         data.process_input_event(event);
+                     }
+                 })
+-                .unwrap();
+-            Ok(calloop::PostAction::Continue)
++            {
++                tracing::error!("Failed to insert EI input source: {}", err);
++            }
+         })
+-        .unwrap();
++        .expect("Failed to insert EI channel source into the event loop");
+ 
+-    Some(socket_path)
++    sender
+ }
+
+From b247e23dc043346f793066a567ff5065ed616eb0 Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Tue, 16 Jun 2026 15:32:13 -0600
+Subject: [PATCH 06/22] feat: disambiguate input devices per backend instance
+
+---
+ src/backend/kms/mod.rs |  2 +-
+ src/backend/winit.rs   |  8 +++-
+ src/backend/x11.rs     |  4 +-
+ src/input/mod.rs       | 91 +++++++++++++++++++++++++++++-------------
+ src/libei.rs           |  4 +-
+ src/shell/seats.rs     | 31 +++++++++-----
+ 6 files changed, 98 insertions(+), 42 deletions(-)
+
+diff --git a/src/backend/kms/mod.rs b/src/backend/kms/mod.rs
+index 694d6ce7e..c6a437b5f 100644
+--- a/src/backend/kms/mod.rs
++++ b/src/backend/kms/mod.rs
+@@ -204,7 +204,7 @@ fn init_libinput(
+             state.backend.kms().input_devices.remove(&*device.name());
+         }
+ 
+-        state.process_input_event(event);
++        state.process_input_event(event, crate::input::InputBackendId::Normal);
+ 
+         for output in state.common.shell.read().outputs() {
+             state.backend.kms().schedule_render(output);
+diff --git a/src/backend/winit.rs b/src/backend/winit.rs
+index 0ff249a76..eff6e9aee 100644
+--- a/src/backend/winit.rs
++++ b/src/backend/winit.rs
+@@ -309,7 +309,9 @@ impl State {
+             WinitEvent::Focus(true) => {
+                 for seat in self.common.shell.read().seats.iter() {
+                     let devices = seat.user_data().get::<Devices>().unwrap();
+-                    if devices.has_device(&WinitVirtualDevice) {
++                    if devices
++                        .has_device(&WinitVirtualDevice, &crate::input::InputBackendId::Normal)
++                    {
+                         seat.set_active_output(&self.backend.winit().output);
+                         break;
+                     }
+@@ -339,7 +341,9 @@ impl State {
+                 render_ping.ping();
+             }
+             WinitEvent::Redraw => render_ping.ping(),
+-            WinitEvent::Input(event) => self.process_input_event(event),
++            WinitEvent::Input(event) => {
++                self.process_input_event(event, crate::input::InputBackendId::Normal)
++            }
+             WinitEvent::CloseRequested => {
+                 self.common.should_stop = true;
+             }
+diff --git a/src/backend/x11.rs b/src/backend/x11.rs
+index bd0e1b34b..8a0704099 100644
+--- a/src/backend/x11.rs
++++ b/src/backend/x11.rs
+@@ -533,14 +533,14 @@ impl State {
+             let device = event.device();
+             for seat in self.common.shell.read().seats.iter() {
+                 let devices = seat.user_data().get::<Devices>().unwrap();
+-                if devices.has_device(&device) {
++                if devices.has_device(&device, &crate::input::InputBackendId::Normal) {
+                     seat.set_active_output(&output);
+                     break;
+                 }
+             }
+         };
+ 
+-        self.process_input_event(event);
++        self.process_input_event(event, crate::input::InputBackendId::Normal);
+         // TODO actually figure out the output
+         for output in self.common.shell.read().outputs() {
+             self.backend.x11().schedule_render(output);
+diff --git a/src/input/mod.rs b/src/input/mod.rs
+index da3014aef..b713db082 100644
+--- a/src/input/mod.rs
++++ b/src/input/mod.rs
+@@ -89,6 +89,17 @@ use std::{
+ pub mod actions;
+ pub mod gestures;
+ 
++/// Identifies the input backend instance an event came from, used to disambiguate device ids
++/// (which are only unique within a single backend instance, see
++/// [`smithay::backend::input::Device::id`]).
++#[derive(Clone, Debug, PartialEq, Eq, Hash)]
++pub enum InputBackendId {
++    /// The session input backend (libinput / winit / x11) these are mutually exclusive
++    Normal,
++    /// A specific Ei client connection
++    Ei(smithay::reexports::reis::eis::Connection),
++}
++
+ /// Used for debouncing focus updates due to pointer motion, if after the focus change is
+ /// triggered the event will cancel if the pointer moves to the original target
+ #[derive(Debug)]
+@@ -166,8 +177,11 @@ impl ModifiersShortcutQueue {
+ 
+ impl State {
+     #[profiling::function]
+-    pub fn process_input_event<B: InputBackend>(&mut self, event: InputEvent<B>)
+-    where
++    pub fn process_input_event<B: InputBackend>(
++        &mut self,
++        event: InputEvent<B>,
++        backend_id: InputBackendId,
++    ) where
+         <B as InputBackend>::Device: 'static,
+     {
+         crate::wayland::handlers::output_power::set_all_surfaces_dpms_on(self);
+@@ -178,7 +192,7 @@ impl State {
+                 let shell = self.common.shell.read();
+                 let seat = shell.seats.last_active();
+                 let led_state = seat.get_keyboard().unwrap().led_state();
+-                seat.devices().add_device(&device, led_state);
++                seat.devices().add_device(&device, led_state, &backend_id);
+                 if device.has_capability(DeviceCapability::TabletTool) {
+                     seat.tablet_seat().add_tablet::<Self>(
+                         &self.common.display_handle,
+@@ -189,8 +203,8 @@ impl State {
+             InputEvent::DeviceRemoved { device } => {
+                 for seat in &mut self.common.shell.read().seats.iter() {
+                     let devices = seat.devices();
+-                    if devices.has_device(&device) {
+-                        devices.remove_device(&device);
++                    if devices.has_device(&device, &backend_id) {
++                        devices.remove_device(&device, &backend_id);
+                         if device.has_capability(DeviceCapability::TabletTool) {
+                             seat.tablet_seat()
+                                 .remove_tablet(&TabletDescriptor::from(&device));
+@@ -211,7 +225,7 @@ impl State {
+                     .shell
+                     .read()
+                     .seats
+-                    .for_device(&event.device())
++                    .for_device(&event.device(), &backend_id)
+                     .cloned();
+                 if let Some(seat) = maybe_seat {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+@@ -312,7 +326,11 @@ impl State {
+                 use smithay::backend::input::PointerMotionEvent;
+ 
+                 let shell = self.common.shell.write();
+-                if let Some(seat) = shell.seats.for_device(&event.device()).cloned() {
++                if let Some(seat) = shell
++                    .seats
++                    .for_device(&event.device(), &backend_id)
++                    .cloned()
++                {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+                     notify_cursor_activity(self, &seat);
+                     let current_output = seat.active_output();
+@@ -677,7 +695,7 @@ impl State {
+                     .shell
+                     .read()
+                     .seats
+-                    .for_device(&event.device())
++                    .for_device(&event.device(), &backend_id)
+                     .cloned();
+                 if let Some(seat) = maybe_seat {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+@@ -749,7 +767,7 @@ impl State {
+                     .shell
+                     .read()
+                     .seats
+-                    .for_device(&event.device())
++                    .for_device(&event.device(), &backend_id)
+                     .cloned()
+                 else {
+                     return;
+@@ -963,7 +981,7 @@ impl State {
+                     .shell
+                     .read()
+                     .seats
+-                    .for_device(&event.device())
++                    .for_device(&event.device(), &backend_id)
+                     .cloned();
+                 if let Some(seat) = maybe_seat {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+@@ -1040,7 +1058,7 @@ impl State {
+                     .shell
+                     .read()
+                     .seats
+-                    .for_device(&event.device())
++                    .for_device(&event.device(), &backend_id)
+                     .cloned();
+                 if let Some(seat) = maybe_seat {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+@@ -1066,7 +1084,7 @@ impl State {
+                     .shell
+                     .read()
+                     .seats
+-                    .for_device(&event.device())
++                    .for_device(&event.device(), &backend_id)
+                     .cloned();
+                 if let Some(seat) = maybe_seat {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+@@ -1167,7 +1185,7 @@ impl State {
+                     .shell
+                     .read()
+                     .seats
+-                    .for_device(&event.device())
++                    .for_device(&event.device(), &backend_id)
+                     .cloned();
+                 if let Some(seat) = maybe_seat {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+@@ -1212,7 +1230,7 @@ impl State {
+                     .shell
+                     .read()
+                     .seats
+-                    .for_device(&event.device())
++                    .for_device(&event.device(), &backend_id)
+                     .cloned();
+                 if let Some(seat) = maybe_seat {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+@@ -1234,7 +1252,7 @@ impl State {
+                     .shell
+                     .read()
+                     .seats
+-                    .for_device(&event.device())
++                    .for_device(&event.device(), &backend_id)
+                     .cloned();
+                 if let Some(seat) = maybe_seat {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+@@ -1256,7 +1274,7 @@ impl State {
+                     .shell
+                     .read()
+                     .seats
+-                    .for_device(&event.device())
++                    .for_device(&event.device(), &backend_id)
+                     .cloned();
+                 if let Some(seat) = maybe_seat {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+@@ -1278,7 +1296,7 @@ impl State {
+                     .shell
+                     .read()
+                     .seats
+-                    .for_device(&event.device())
++                    .for_device(&event.device(), &backend_id)
+                     .cloned();
+                 if let Some(seat) = maybe_seat {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+@@ -1300,7 +1318,7 @@ impl State {
+                     .shell
+                     .read()
+                     .seats
+-                    .for_device(&event.device())
++                    .for_device(&event.device(), &backend_id)
+                     .cloned();
+                 if let Some(seat) = maybe_seat {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+@@ -1319,7 +1337,11 @@ impl State {
+ 
+             InputEvent::TouchDown { event, .. } => {
+                 let shell = self.common.shell.write();
+-                if let Some(seat) = shell.seats.for_device(&event.device()).cloned() {
++                if let Some(seat) = shell
++                    .seats
++                    .for_device(&event.device(), &backend_id)
++                    .cloned()
++                {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+                     let Some(output) =
+                         mapped_output_for_device(&self.common.config, &shell, &event.device())
+@@ -1351,7 +1373,11 @@ impl State {
+             }
+             InputEvent::TouchMotion { event, .. } => {
+                 let shell = self.common.shell.write();
+-                if let Some(seat) = shell.seats.for_device(&event.device()).cloned() {
++                if let Some(seat) = shell
++                    .seats
++                    .for_device(&event.device(), &backend_id)
++                    .cloned()
++                {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+                     let Some(output) =
+                         mapped_output_for_device(&self.common.config, &shell, &event.device())
+@@ -1387,7 +1413,10 @@ impl State {
+                     shell.set_overview_mode(None, self.common.event_loop_handle.clone());
+                 }
+ 
+-                let maybe_seat = shell.seats.for_device(&event.device()).cloned();
++                let maybe_seat = shell
++                    .seats
++                    .for_device(&event.device(), &backend_id)
++                    .cloned();
+                 if let Some(seat) = maybe_seat {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+                     std::mem::drop(shell);
+@@ -1409,7 +1438,7 @@ impl State {
+                     .shell
+                     .read()
+                     .seats
+-                    .for_device(&event.device())
++                    .for_device(&event.device(), &backend_id)
+                     .cloned();
+                 if let Some(seat) = maybe_seat {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+@@ -1423,7 +1452,7 @@ impl State {
+                     .shell
+                     .read()
+                     .seats
+-                    .for_device(&event.device())
++                    .for_device(&event.device(), &backend_id)
+                     .cloned();
+                 if let Some(seat) = maybe_seat {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+@@ -1434,7 +1463,11 @@ impl State {
+ 
+             InputEvent::TabletToolAxis { event, .. } => {
+                 let shell = self.common.shell.write();
+-                if let Some(seat) = shell.seats.for_device(&event.device()).cloned() {
++                if let Some(seat) = shell
++                    .seats
++                    .for_device(&event.device(), &backend_id)
++                    .cloned()
++                {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+                     notify_cursor_activity(self, &seat);
+                     let Some(output) =
+@@ -1500,7 +1533,11 @@ impl State {
+             }
+             InputEvent::TabletToolProximity { event, .. } => {
+                 let shell = self.common.shell.write();
+-                if let Some(seat) = shell.seats.for_device(&event.device()).cloned() {
++                if let Some(seat) = shell
++                    .seats
++                    .for_device(&event.device(), &backend_id)
++                    .cloned()
++                {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+                     notify_cursor_activity(self, &seat);
+                     let Some(output) =
+@@ -1560,7 +1597,7 @@ impl State {
+                     .shell
+                     .read()
+                     .seats
+-                    .for_device(&event.device())
++                    .for_device(&event.device(), &backend_id)
+                     .cloned();
+                 if let Some(seat) = maybe_seat {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+@@ -1583,7 +1620,7 @@ impl State {
+                     .shell
+                     .read()
+                     .seats
+-                    .for_device(&event.device())
++                    .for_device(&event.device(), &backend_id)
+                     .cloned();
+                 if let Some(seat) = maybe_seat {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+diff --git a/src/libei.rs b/src/libei.rs
+index d30f5b581..51cdb5a68 100644
+--- a/src/libei.rs
++++ b/src/libei.rs
+@@ -7,6 +7,7 @@ use smithay::backend::libei::{EiInput, EiInputEvent};
+ use smithay::reexports::calloop;
+ 
+ use crate::config::xkb_config_to_wl;
++use crate::input::InputBackendId;
+ use crate::state::State;
+ 
+ pub fn setup_ei(
+@@ -39,7 +40,8 @@ pub fn setup_ei(
+                     }
+                     EiInputEvent::Disconnected => {}
+                     EiInputEvent::Event(event) => {
+-                        data.process_input_event(event);
++                        let backend_id = InputBackendId::Ei(connection.eis_connection().clone());
++                        data.process_input_event(event, backend_id);
+                     }
+                 })
+             {
+diff --git a/src/shell/seats.rs b/src/shell/seats.rs
+index 5273e97f7..8bc2f158e 100644
+--- a/src/shell/seats.rs
++++ b/src/shell/seats.rs
+@@ -5,7 +5,7 @@ use std::{any::Any, cell::RefCell, collections::HashMap, sync::Mutex};
+ use crate::{
+     backend::render::cursor::CursorState,
+     config::{Config, xkb_config_to_wl},
+-    input::{ModifiersShortcutQueue, SupressedButtons, SupressedKeys},
++    input::{InputBackendId, ModifiersShortcutQueue, SupressedButtons, SupressedKeys},
+     state::State,
+ };
+ use smithay::{
+@@ -82,11 +82,15 @@ impl Seats {
+         self.last_active = Some(seat.clone());
+     }
+ 
+-    pub fn for_device<D: Device>(&self, device: &D) -> Option<&Seat<State>> {
++    pub fn for_device<D: Device>(
++        &self,
++        device: &D,
++        backend_id: &InputBackendId,
++    ) -> Option<&Seat<State>> {
+         self.iter().find(|seat| {
+             let userdata = seat.user_data();
+             let devices = userdata.get::<Devices>().unwrap();
+-            devices.has_device(device)
++            devices.has_device(device, backend_id)
+         })
+     }
+ }
+@@ -96,6 +100,7 @@ impl Devices {
+         &self,
+         device: &D,
+         led_state: LedState,
++        backend_id: &InputBackendId,
+     ) -> Vec<DeviceCapability> {
+         let id = device.id();
+         let mut map = self.capabilities.borrow_mut();
+@@ -113,7 +118,7 @@ impl Devices {
+             .cloned()
+             .filter(|c| map.values().flatten().all(|has| *c != *has))
+             .collect::<Vec<_>>();
+-        map.insert(id, caps);
++        map.insert((backend_id.clone(), id), caps);
+ 
+         if device.has_capability(DeviceCapability::Keyboard)
+             && let Some(device) = <dyn Any>::downcast_ref::<InputDevice>(device)
+@@ -126,11 +131,18 @@ impl Devices {
+         new_caps
+     }
+ 
+-    pub fn has_device<D: Device>(&self, device: &D) -> bool {
+-        self.capabilities.borrow().contains_key(&device.id())
++    /// Whether the given backend's device with this id is registered on the seat.
++    pub fn has_device<D: Device>(&self, device: &D, backend_id: &InputBackendId) -> bool {
++        self.capabilities
++            .borrow()
++            .contains_key(&(backend_id.clone(), device.id()))
+     }
+ 
+-    pub fn remove_device<D: Device>(&self, device: &D) -> Vec<DeviceCapability> {
++    pub fn remove_device<D: Device>(
++        &self,
++        device: &D,
++        backend_id: &InputBackendId,
++    ) -> Vec<DeviceCapability> {
+         let id = device.id();
+ 
+         let mut keyboards = self.keyboards.borrow_mut();
+@@ -139,7 +151,7 @@ impl Devices {
+         }
+ 
+         let mut map = self.capabilities.borrow_mut();
+-        map.remove(&id)
++        map.remove(&(backend_id.clone(), id))
+             .unwrap_or_default()
+             .into_iter()
+             .filter(|c| map.values().flatten().all(|has| *c != *has))
+@@ -155,7 +167,8 @@ impl Devices {
+ 
+ #[derive(Default)]
+ pub struct Devices {
+-    capabilities: RefCell<HashMap<String, Vec<DeviceCapability>>>,
++    // Keyed by `(backend, device_id)`
++    capabilities: RefCell<HashMap<(InputBackendId, String), Vec<DeviceCapability>>>,
+     // Used for updating keyboard leds on kms backend
+     keyboards: RefCell<Vec<InputDevice>>,
+ }
+
+From bcdc8507ca79a0a94d25e5c41f1475e09c2fc1f9 Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Tue, 16 Jun 2026 15:43:52 -0600
+Subject: [PATCH 07/22] fix: track ei seats to reconfigure their keyboards
+
+---
+ src/config/mod.rs | 8 ++++++++
+ src/libei.rs      | 9 ++++++++-
+ src/state.rs      | 8 ++++++++
+ 3 files changed, 24 insertions(+), 1 deletion(-)
+
+diff --git a/src/config/mod.rs b/src/config/mod.rs
+index 1d9b9c921..d6f1db7fa 100644
+--- a/src/config/mod.rs
++++ b/src/config/mod.rs
+@@ -820,6 +820,14 @@ fn config_changed(config: cosmic_config::Config, keys: Vec<String>, state: &mut
+                         }
+                     }
+                 }
++                // Re-create the virtual keyboard on each libei sender seat with the new keymap.
++                for seat in state.common.ei_seats.values() {
++                    if let Err(err) =
++                        seat.add_keyboard("virtual keyboard", xkb_config_to_wl(&value))
++                    {
++                        warn!(?err, "Failed to update libei virtual keyboard config");
++                    }
++                }
+                 state.common.config.cosmic_conf.xkb_config = value;
+             }
+             "keyboard_config" => {
+diff --git a/src/libei.rs b/src/libei.rs
+index 51cdb5a68..3f88bd828 100644
+--- a/src/libei.rs
++++ b/src/libei.rs
+@@ -37,8 +37,15 @@ pub fn setup_ei(
+                         seat.add_pointer("virtual pointer");
+                         seat.add_pointer_absolute("virtual absolute pointer");
+                         seat.add_touch("virtual touch");
++                        // Track the seat so its virtual keyboard can be re-created when the
++                        // keyboard configuration changes at runtime.
++                        data.common
++                            .ei_seats
++                            .insert(connection.eis_connection().clone(), seat);
++                    }
++                    EiInputEvent::Disconnected => {
++                        data.common.ei_seats.remove(connection.eis_connection());
+                     }
+-                    EiInputEvent::Disconnected => {}
+                     EiInputEvent::Event(event) => {
+                         let backend_id = InputBackendId::Ei(connection.eis_connection().clone());
+                         data.process_input_event(event, backend_id);
+diff --git a/src/state.rs b/src/state.rs
+index 18de36bad..014606c1c 100644
+--- a/src/state.rs
++++ b/src/state.rs
+@@ -244,6 +244,13 @@ pub struct Common {
+ 
+     pub gesture_state: Option<GestureState>,
+ 
++    /// Active libei sender seats, keyed by their `eis` connection. Tracked so their virtual
++    /// keyboards can be re-created when the keyboard configuration changes at runtime.
++    pub ei_seats: std::collections::HashMap<
++        smithay::reexports::reis::eis::Connection,
++        smithay::backend::libei::EiInputSeat,
++    >,
++
+     pub kiosk_child: Option<Child>,
+     pub theme: cosmic::Theme,
+ 
+@@ -746,6 +753,7 @@ impl State {
+                 startup_done: Arc::new(AtomicBool::new(false)),
+                 should_stop: false,
+                 gesture_state: None,
++                ei_seats: std::collections::HashMap::new(),
+ 
+                 kiosk_child: None,
+                 theme: cosmic::theme::system_preference(),
+
+From e64f78cbe829c53c6e9a2c1717148d62ef62d8a8 Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Tue, 16 Jun 2026 17:22:38 -0600
+Subject: [PATCH 08/22] feat: only add the requested devices to the ei sender
+
+Instead of adding  pointer, keyboard, and touchscreen for all ei
+senders. We add only the devices that xdg-desktop-portal has got consent
+for from the user
+---
+ src/dbus/ei.rs  |  7 ++++---
+ src/dbus/mod.rs |  4 ++--
+ src/libei.rs    | 40 ++++++++++++++++++++++++++++------------
+ 3 files changed, 34 insertions(+), 17 deletions(-)
+
+diff --git a/src/dbus/ei.rs b/src/dbus/ei.rs
+index 7eb5d88cd..6391dc76b 100644
+--- a/src/dbus/ei.rs
++++ b/src/dbus/ei.rs
+@@ -12,9 +12,9 @@ static ALLOWED_NAMES: &[WellKnownName] = &[WellKnownName::from_static_str_unchec
+     "org.freedesktop.impl.portal.desktop.cosmic",
+ )];
+ 
+-/// Channel for handing the EI socketpair
++/// Channel for handing the EI socketpair (and requested device types)
+ /// It's `None` until the EI sender side has been set up
+-type EiSender = Arc<Mutex<Option<calloop::channel::Sender<UnixStream>>>>;
++type EiSender = Arc<Mutex<Option<calloop::channel::Sender<crate::libei::EiRequest>>>>;
+ 
+ struct Ei {
+     ei_sender: EiSender,
+@@ -36,6 +36,7 @@ impl Ei {
+     /// Create a new EI sender context
+     async fn get_sender_socket(
+         &self,
++        device_types: u32,
+         #[zbus(header)] header: zbus::message::Header<'_>,
+     ) -> zbus::fdo::Result<zbus::zvariant::OwnedFd> {
+         if let Some(sender) = header.sender() {
+@@ -51,7 +52,7 @@ impl Ei {
+             let sender = guard
+                 .as_ref()
+                 .ok_or_else(|| zbus::fdo::Error::Failed("EI sender not available".to_string()))?;
+-            sender.send(comp_stream).map_err(|err| {
++            sender.send((comp_stream, device_types)).map_err(|err| {
+                 zbus::fdo::Error::Failed(format!("Failed to hand off EI socket: {err}"))
+             })?;
+         }
+diff --git a/src/dbus/mod.rs b/src/dbus/mod.rs
+index bfc13386e..9138caee8 100644
+--- a/src/dbus/mod.rs
++++ b/src/dbus/mod.rs
+@@ -31,7 +31,7 @@ struct DBusStateInner {
+     session_conn: zbus::Result<zbus::Connection>,
+     system_conn: zbus::Result<zbus::Connection>,
+     a11y_keyboard_monitor: RefCell<Option<a11y_keyboard_monitor::A11yKeyboardMonitorState>>,
+-    ei_sender: Arc<Mutex<Option<calloop::channel::Sender<std::os::unix::net::UnixStream>>>>,
++    ei_sender: Arc<Mutex<Option<calloop::channel::Sender<crate::libei::EiRequest>>>>,
+ }
+ 
+ impl DBusState {
+@@ -69,7 +69,7 @@ impl DBusState {
+         RefMut::filter_map(self.0.a11y_keyboard_monitor.borrow_mut(), |x| x.as_mut()).ok()
+     }
+ 
+-    pub fn set_ei_sender(&self, sender: calloop::channel::Sender<std::os::unix::net::UnixStream>) {
++    pub fn set_ei_sender(&self, sender: calloop::channel::Sender<crate::libei::EiRequest>) {
+         *self.0.ei_sender.lock().unwrap() = Some(sender);
+     }
+ 
+diff --git a/src/libei.rs b/src/libei.rs
+index 3f88bd828..1d8050284 100644
+--- a/src/libei.rs
++++ b/src/libei.rs
+@@ -10,14 +10,21 @@ use crate::config::xkb_config_to_wl;
+ use crate::input::InputBackendId;
+ use crate::state::State;
+ 
++// Requested device types for an EI connection, mirroring the XDG RemoteDesktop portal `DeviceType` bitmask
++const DEVICE_TYPE_KEYBOARD: u32 = 1;
++const DEVICE_TYPE_POINTER: u32 = 2;
++const DEVICE_TYPE_TOUCHSCREEN: u32 = 4;
++
++pub type EiRequest = (UnixStream, u32);
++
+ pub fn setup_ei(
+     handle: &calloop::LoopHandle<'static, State>,
+-) -> calloop::channel::Sender<UnixStream> {
+-    let (sender, channel) = calloop::channel::channel::<UnixStream>();
++) -> calloop::channel::Sender<EiRequest> {
++    let (sender, channel) = calloop::channel::channel::<EiRequest>();
+     let handle_clone = handle.clone();
+     handle
+         .insert_source(channel, move |event, _, _| {
+-            let calloop::channel::Event::Msg(stream) = event else {
++            let calloop::channel::Event::Msg((stream, device_types)) = event else {
+                 return;
+             };
+             let context = match eis::Context::new(stream) {
+@@ -29,19 +36,28 @@ pub fn setup_ei(
+             };
+             let source = EiInput::new(context);
+             if let Err(err) =
+-                handle_clone.insert_source(source, |event, connection, data| match event {
++                handle_clone.insert_source(source, move |event, connection, data| match event {
+                     EiInputEvent::Connected => {
+                         let seat = connection.add_seat("default");
+-                        let conf = data.common.config.xkb_config();
+-                        let _ = seat.add_keyboard("virtual keyboard", xkb_config_to_wl(&conf));
+-                        seat.add_pointer("virtual pointer");
+-                        seat.add_pointer_absolute("virtual absolute pointer");
+-                        seat.add_touch("virtual touch");
++                        let wants_keyboard = device_types & DEVICE_TYPE_KEYBOARD != 0;
++                        if wants_keyboard {
++                            let conf = data.common.config.xkb_config();
++                            let _ = seat.add_keyboard("virtual keyboard", xkb_config_to_wl(&conf));
++                        }
++                        if device_types & DEVICE_TYPE_POINTER != 0 {
++                            seat.add_pointer("virtual pointer");
++                            seat.add_pointer_absolute("virtual absolute pointer");
++                        }
++                        if device_types & DEVICE_TYPE_TOUCHSCREEN != 0 {
++                            seat.add_touch("virtual touch");
++                        }
+                         // Track the seat so its virtual keyboard can be re-created when the
+                         // keyboard configuration changes at runtime.
+-                        data.common
+-                            .ei_seats
+-                            .insert(connection.eis_connection().clone(), seat);
++                        if wants_keyboard {
++                            data.common
++                                .ei_seats
++                                .insert(connection.eis_connection().clone(), seat);
++                        }
+                     }
+                     EiInputEvent::Disconnected => {
+                         data.common.ei_seats.remove(connection.eis_connection());
+
+From e04d1ccfd6187f252e440e59d50741925a4156e6 Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Tue, 16 Jun 2026 21:43:39 -0600
+Subject: [PATCH 09/22] feat: add support for `ei_keysym` and `ei_text`
+
+---
+ src/libei.rs | 114 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 114 insertions(+)
+
+diff --git a/src/libei.rs b/src/libei.rs
+index 1d8050284..16f410ee8 100644
+--- a/src/libei.rs
++++ b/src/libei.rs
+@@ -3,8 +3,12 @@ use std::os::unix::net::UnixStream;
+ use reis::eis;
+ use smithay::reexports::reis;
+ 
++use smithay::backend::input::KeyState;
+ use smithay::backend::libei::{EiInput, EiInputEvent};
++use smithay::input::keyboard::{Keycode, Keysym, ModifiersState, xkb};
+ use smithay::reexports::calloop;
++use smithay::utils::SERIAL_COUNTER;
++use smithay::wayland::text_input::TextInputSeat;
+ 
+ use crate::config::xkb_config_to_wl;
+ use crate::input::InputBackendId;
+@@ -43,6 +47,8 @@ pub fn setup_ei(
+                         if wants_keyboard {
+                             let conf = data.common.config.xkb_config();
+                             let _ = seat.add_keyboard("virtual keyboard", xkb_config_to_wl(&conf));
++                            // The text device lets clients inject keysyms/utf8 directly independent of the keymap.
++                            seat.add_text("virtual text");
+                         }
+                         if device_types & DEVICE_TYPE_POINTER != 0 {
+                             seat.add_pointer("virtual pointer");
+@@ -66,6 +72,12 @@ pub fn setup_ei(
+                         let backend_id = InputBackendId::Ei(connection.eis_connection().clone());
+                         data.process_input_event(event, backend_id);
+                     }
++                    EiInputEvent::TextKeysym { keysym, state } => {
++                        data.inject_ei_keysym(keysym, state);
++                    }
++                    EiInputEvent::TextUtf8 { text } => {
++                        data.inject_ei_text(&text);
++                    }
+                 })
+             {
+                 tracing::error!("Failed to insert EI input source: {}", err);
+@@ -75,3 +87,105 @@ pub fn setup_ei(
+ 
+     sender
+ }
++
++impl State {
++    /// Inject a single keysym (from an EI `ei_text` device) into the focused client.
++    ///
++    /// Since Wayland keyboard input is keycode-based, we resolve the keysym to a `(keycode, level)`
++    /// in the active layout, derive the modifiers that level needs, advertise them, then forward the
++    /// keycode
++    pub fn inject_ei_keysym(&mut self, keysym: u32, key_state: KeyState) {
++        let seat = self.common.shell.read().seats.last_active().clone();
++        let Some(keyboard) = seat.get_keyboard() else {
++            return;
++        };
++        let keysym = Keysym::new(keysym);
++
++        // Resolve the keysym to a keycode + the modifier state its level requires.
++        let resolved = keyboard.with_xkb_state(self, |ctx| {
++            let xkb_guard = ctx.xkb().lock().unwrap();
++            let layout = xkb_guard.active_layout();
++            // SAFETY: the keymap is only read within this closure.
++            let keymap = unsafe { xkb_guard.keymap() };
++            for raw in keymap.min_keycode().raw()..=keymap.max_keycode().raw() {
++                let keycode = Keycode::new(raw);
++                if keymap.key_get_name(keycode).is_none() {
++                    continue;
++                }
++                for level in 0..keymap.num_levels_for_key(keycode, layout.0) {
++                    if keymap
++                        .key_get_syms_by_level(keycode, layout.0, level)
++                        .contains(&keysym)
++                    {
++                        let mut masks = [0u32; 1];
++                        let count =
++                            keymap.key_get_mods_for_level(keycode, layout.0, level, &mut masks);
++                        let mods = if count > 0 && masks[0] != 0 {
++                            let mut xkb_state = xkb::State::new(keymap);
++                            xkb_state.update_mask(masks[0], 0, 0, 0, 0, layout.0);
++                            let mut mods = ModifiersState::default();
++                            mods.update_with(&xkb_state);
++                            mods
++                        } else {
++                            ModifiersState::default()
++                        };
++                        return Some((keycode, mods));
++                    }
++                }
++            }
++            None
++        });
++
++        let Some((keycode, mods)) = resolved else {
++            tracing::warn!(
++                "EI text keysym {:?} is not in the active layout; ignoring",
++                keysym
++            );
++            return;
++        };
++
++        let needs_mods = mods != ModifiersState::default();
++        let serial = SERIAL_COUNTER.next_serial();
++        let time = self.common.clock.now().as_millis();
++
++        match key_state {
++            KeyState::Pressed => {
++                if needs_mods {
++                    keyboard.set_modifier_state(mods);
++                    keyboard.advertise_modifier_state(self);
++                }
++                keyboard.input_forward(self, keycode, KeyState::Pressed, serial, time, needs_mods);
++            }
++            KeyState::Released => {
++                keyboard.input_forward(self, keycode, KeyState::Released, serial, time, false);
++                if needs_mods {
++                    keyboard.set_modifier_state(ModifiersState::default());
++                    keyboard.advertise_modifier_state(self);
++                }
++            }
++        }
++    }
++
++    /// Inject UTF-8 text (from an EI `ei_text` device) into the focused client.
++    pub fn inject_ei_text(&mut self, text: &str) {
++        let seat = self.common.shell.read().seats.last_active().clone();
++        let text_input = seat.text_input();
++        let mut injected = false;
++        text_input.with_active_text_input(|ti, _surface| {
++            ti.commit_string(Some(text.to_owned()));
++            injected = true;
++        });
++        if injected {
++            text_input.done(false);
++            return;
++        }
++
++        for c in text.chars() {
++            let keysym = Keysym::from_char(c);
++            if keysym.raw() != 0 {
++                self.inject_ei_keysym(keysym.raw(), KeyState::Pressed);
++                self.inject_ei_keysym(keysym.raw(), KeyState::Released);
++            }
++        }
++    }
++}
+
+From 002942121cd91a9d474e8ca444277339f609ca85 Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Wed, 17 Jun 2026 15:05:31 -0600
+Subject: [PATCH 10/22] fix: use `IsolatedKeyboardState` for ei connections
+
+---
+ src/config/mod.rs |  12 ++
+ src/input/mod.rs  | 281 ++++++++++++++++++++++++++++++++++------------
+ src/libei.rs      | 138 ++++++++---------------
+ src/state.rs      |   7 ++
+ 4 files changed, 278 insertions(+), 160 deletions(-)
+
+diff --git a/src/config/mod.rs b/src/config/mod.rs
+index d6f1db7fa..8561a834a 100644
+--- a/src/config/mod.rs
++++ b/src/config/mod.rs
+@@ -828,6 +828,18 @@ fn config_changed(config: cosmic_config::Config, keys: Vec<String>, state: &mut
+                         warn!(?err, "Failed to update libei virtual keyboard config");
+                     }
+                 }
++                // Rebuild the per-connection isolated keyboard state with the new keymap
++                // Held modifiers reset
++                for iso in state.common.ei_isolated_kbd.values_mut() {
++                    match smithay::input::keyboard::IsolatedKeyboardState::new(xkb_config_to_wl(
++                        &value,
++                    )) {
++                        Ok(new_state) => *iso = new_state,
++                        Err(err) => {
++                            warn!(?err, "Failed to update libei isolated keyboard config")
++                        }
++                    }
++                }
+                 state.common.config.cosmic_conf.xkb_config = value;
+             }
+             "keyboard_config" => {
+diff --git a/src/input/mod.rs b/src/input/mod.rs
+index b713db082..db928dec0 100644
+--- a/src/input/mod.rs
++++ b/src/input/mod.rs
+@@ -39,10 +39,10 @@ use smithay::{
+     backend::input::{
+         AbsolutePositionEvent, Axis, AxisRelativeDirection, AxisSource, Device, DeviceCapability,
+         GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _,
+-        GestureSwipeUpdateEvent as _, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
+-        PointerAxisEvent, ProximityState, Switch, SwitchState, SwitchToggleEvent,
+-        TabletToolButtonEvent, TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent,
+-        TabletToolTipState, TouchEvent,
++        GestureSwipeUpdateEvent as _, InputBackend, InputEvent, KeyState, PointerAxisEvent,
++        ProximityState, Switch, SwitchState, SwitchToggleEvent, TabletToolButtonEvent,
++        TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
++        TouchEvent,
+     },
+     desktop::{PopupKeyboardGrab, WindowSurfaceType, utils::under_from_surface_tree},
+     input::{
+@@ -246,51 +246,16 @@ impl State {
+                             serial,
+                             time,
+                             |data, modifiers, handle| {
+-                                if previous_modifiers != *modifiers {
+-                                    *seat
+-                                        .user_data()
+-                                        .get::<LastModifierChange>()
+-                                        .unwrap()
+-                                        .0
+-                                        .lock()
+-                                        .unwrap() = Some(serial);
+-                                }
+-
+-                                let current_focus = seat.get_keyboard().unwrap().current_focus();
+-                                let shortcuts_inhibited = current_focus.as_ref().is_some_and(|f| {
+-                                    f.wl_surface()
+-                                        .map(|surface| {
+-                                            seat.keyboard_shortcuts_inhibitor_for_surface(&surface)
+-                                                .map(|inhibitor| inhibitor.is_active())
+-                                                .unwrap_or(false)
+-                                                || seat.has_active_xwayland_grab(&surface)
+-                                        })
+-                                        .unwrap_or(false)
+-                                });
+-                                let sym = handle.modified_sym();
+-
+-                                let result = Self::filter_keyboard_input(
+-                                    data, &event, &seat, modifiers, handle, serial,
+-                                );
+-
+-                                if (matches!(result, FilterResult::Forward)
+-                                    && !seat.get_keyboard().unwrap().is_grabbed()
+-                                    && !shortcuts_inhibited
+-                                    && !matches!(
+-                                        current_focus,
+-                                        Some(KeyboardFocusTarget::LockSurface(_))
+-                                    ))
+-                                // we don't want to accidentally leave any keys pressed
+-                                // and do more filtering in `xwayland_notify_key_event`
+-                                // for released keys
+-                                    || state == KeyState::Released
+-                                {
+-                                    data.common.xwayland_notify_key_event(
+-                                        sym, keycode, state, serial, time,
+-                                    );
+-                                }
+-
+-                                result
++                                data.process_keyboard_filter(
++                                    &seat,
++                                    modifiers,
++                                    handle,
++                                    serial,
++                                    time,
++                                    keycode,
++                                    state,
++                                    previous_modifiers,
++                                )
+                             },
+                         )
+                         .flatten()
+@@ -807,7 +772,7 @@ impl State {
+                         };
+                         if let Some(target) = under {
+                             if let Some(surface) = target.toplevel().map(Cow::into_owned)
+-                                && seat.get_keyboard().unwrap().modifier_state().logo
++                                && self.source_modifiers(&backend_id, &seat).logo
+                                 && !shortcuts_inhibited
+                             {
+                                 let seat_clone = seat.clone();
+@@ -987,7 +952,7 @@ impl State {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+                     notify_cursor_activity(self, &seat);
+ 
+-                    if seat.get_keyboard().unwrap().modifier_state().logo
++                    if self.source_modifiers(&backend_id, &seat).logo
+                         && self
+                             .common
+                             .config
+@@ -1676,15 +1641,194 @@ impl State {
+         }
+     }
+ 
++    /// The modifier state held by the source that produced an event.
++    ///
++    /// For a libei connection this is its own isolated keyboard state; for everything else
++    /// it is the seat's (physical) keyboard.
++    pub(crate) fn source_modifiers(
++        &self,
++        backend_id: &InputBackendId,
++        seat: &Seat<State>,
++    ) -> ModifiersState {
++        match backend_id {
++            InputBackendId::Ei(conn) => self
++                .common
++                .ei_isolated_kbd
++                .get(conn)
++                .map(|iso| iso.modifier_state())
++                .unwrap_or_default(),
++            _ => seat
++                .get_keyboard()
++                .map(|k| k.modifier_state())
++                .unwrap_or_default(),
++        }
++    }
++
++    pub(crate) fn process_keyboard_filter(
++        &mut self,
++        seat: &Seat<State>,
++        modifiers: &ModifiersState,
++        handle: KeysymHandle<'_>,
++        serial: Serial,
++        time: u32,
++        keycode: Keycode,
++        key_state: KeyState,
++        previous_modifiers: ModifiersState,
++    ) -> FilterResult<Option<(Action, shortcuts::Binding)>> {
++        if previous_modifiers != *modifiers {
++            *seat
++                .user_data()
++                .get::<LastModifierChange>()
++                .unwrap()
++                .0
++                .lock()
++                .unwrap() = Some(serial);
++        }
++
++        let current_focus = seat.get_keyboard().unwrap().current_focus();
++        let shortcuts_inhibited = current_focus.as_ref().is_some_and(|f| {
++            f.wl_surface()
++                .map(|surface| {
++                    seat.keyboard_shortcuts_inhibitor_for_surface(&surface)
++                        .map(|inhibitor| inhibitor.is_active())
++                        .unwrap_or(false)
++                        || seat.has_active_xwayland_grab(&surface)
++                })
++                .unwrap_or(false)
++        });
++        let sym = handle.modified_sym();
++
++        let result =
++            self.filter_keyboard_input(seat, modifiers, handle, serial, keycode, key_state, time);
++
++        if (matches!(result, FilterResult::Forward)
++            && !seat.get_keyboard().unwrap().is_grabbed()
++            && !shortcuts_inhibited
++            && !matches!(current_focus, Some(KeyboardFocusTarget::LockSurface(_))))
++        // we don't want to accidentally leave any keys pressed
++            || key_state == KeyState::Released
++        {
++            self.common
++                .xwayland_notify_key_event(sym, keycode, key_state, serial, time);
++        }
++
++        result
++    }
++
++    /// Inject a key from a libei connection through its isolated keyboard state.
++    pub(crate) fn inject_ei_key(
++        &mut self,
++        conn: &smithay::reexports::reis::eis::Connection,
++        keycode: Keycode,
++        key_state: KeyState,
++    ) {
++        let seat = self.common.shell.read().seats.last_active().clone();
++        let Some(keyboard) = seat.get_keyboard() else {
++            return;
++        };
++        let serial = SERIAL_COUNTER.next_serial();
++        let time = self.common.clock.now().as_millis();
++
++        let Some(mut iso) = self.common.ei_isolated_kbd.remove(conn) else {
++            return;
++        };
++        let previous_modifiers = iso.modifier_state();
++        let result = keyboard
++            .input_isolated(
++                self,
++                &mut iso,
++                keycode,
++                key_state,
++                serial,
++                time,
++                |data, modifiers, handle| {
++                    data.process_keyboard_filter(
++                        &seat,
++                        modifiers,
++                        handle,
++                        serial,
++                        time,
++                        keycode,
++                        key_state,
++                        previous_modifiers,
++                    )
++                },
++            )
++            .flatten();
++        self.common.ei_isolated_kbd.insert(conn.clone(), iso);
++
++        if let Some((action, pattern)) = result {
++            self.handle_action(action, &seat, serial, time, pattern, None);
++        }
++    }
++
++    /// Resolve a keysym from a libei `ei_text` device to a keycode
++    pub(crate) fn inject_ei_text_keysym(
++        &mut self,
++        conn: &smithay::reexports::reis::eis::Connection,
++        keysym: u32,
++        key_state: KeyState,
++    ) {
++        use smithay::wayland::text_input::TextInputSeat;
++
++        let keysym = Keysym::new(keysym);
++
++        // if a printable, non-control keysym with no modifier held + text-input protocol when a text-input client is focused then commit the character directly
++        // (which also handles out-of-layout / Unicode that has no keycode)
++        // otherwise go through to keycode injection, which reaches every app.
++        let no_mods = self.common.ei_isolated_kbd.get(conn).is_some_and(|iso| {
++            let m = iso.modifier_state();
++            !(m.ctrl || m.alt || m.shift || m.logo)
++        });
++        if no_mods
++            && let Some(c) = keysym.key_char()
++            && !c.is_control()
++        {
++            let seat = self.common.shell.read().seats.last_active().clone();
++            let text_input = seat.text_input();
++            let mut handled = false;
++            text_input.with_active_text_input(|ti, _surface| {
++                // A text-input client is focused: commit on press, no-op on release.
++                if key_state == KeyState::Pressed {
++                    ti.commit_string(Some(c.to_string()));
++                }
++                handled = true;
++            });
++            if handled {
++                if key_state == KeyState::Pressed {
++                    text_input.done(false);
++                }
++                return;
++            }
++            // No active text-input: fall through to keycode injection (press and release).
++        }
++
++        let Some(keycode) = self
++            .common
++            .ei_isolated_kbd
++            .get(conn)
++            .and_then(|iso| iso.keycode_for_keysym(keysym))
++        else {
++            tracing::warn!(
++                "EI text keysym {:?} is not in the active layout; ignoring",
++                keysym
++            );
++            return;
++        };
++        self.inject_ei_key(conn, keycode, key_state);
++    }
++
+     /// Determine is key event should be intercepted as a key binding, or forwarded to surface
+     #[profiling::function]
+-    pub fn filter_keyboard_input<B: InputBackend, E: KeyboardKeyEvent<B>>(
++    pub fn filter_keyboard_input(
+         &mut self,
+-        event: &E,
+         seat: &Seat<Self>,
+         modifiers: &ModifiersState,
+         handle: KeysymHandle<'_>,
+         serial: Serial,
++        keycode: Keycode,
++        key_state: KeyState,
++        time: u32,
+     ) -> FilterResult<Option<(Action, shortcuts::Binding)>> {
+         // Pre-compute for layout-agnostic shortcut matching
+         let raw_syms = handle.raw_syms();
+@@ -1720,7 +1864,7 @@ impl State {
+         });
+ 
+         if let Some(a11y_keyboard_monitor) = self.common.dbus_state.a11y_keyboard_monitor() {
+-            a11y_keyboard_monitor.key_event(modifiers, &handle, event.state());
++            a11y_keyboard_monitor.key_event(modifiers, &handle, key_state);
+         }
+ 
+         // Leave move overview mode, if any modifier was released
+@@ -1742,7 +1886,7 @@ impl State {
+                 || (action_pattern.modifiers.shift && !modifiers.shift)
+                 || (action_pattern.key.is_some()
+                     && key_matches(action_pattern.key.unwrap())
+-                    && event.state() == KeyState::Released))
++                    && key_state == KeyState::Released))
+         {
+             shell.set_overview_mode(None, self.common.event_loop_handle.clone());
+ 
+@@ -1758,7 +1902,7 @@ impl State {
+         // Leave or update resize mode, if modifiers changed or initial key was released
+         if let Some(action_pattern) = shell.resize_mode().0.active_binding() {
+             if action_pattern.key.is_some()
+-                && event.state() == KeyState::Released
++                && key_state == KeyState::Released
+                 && key_matches(action_pattern.key.unwrap())
+             {
+                 shell.set_resize_mode(
+@@ -1811,7 +1955,7 @@ impl State {
+                 let action = Action::Private(PrivateAction::Resizing(
+                     direction,
+                     edge.into(),
+-                    cosmic_keystate_from_smithay(event.state()),
++                    cosmic_keystate_from_smithay(key_state),
+                 ));
+                 let key_pattern = shortcuts::Binding {
+                     modifiers: cosmic_modifiers_from_smithay(*modifiers),
+@@ -1820,7 +1964,7 @@ impl State {
+                     description: None,
+                 };
+ 
+-                if event.state() == KeyState::Released {
++                if key_state == KeyState::Released {
+                     if let Some(tokens) = seat.supressed_keys().filter(&handle) {
+                         for token in tokens {
+                             self.common.event_loop_handle.remove(token);
+@@ -1831,7 +1975,6 @@ impl State {
+                     let action_clone = action.clone();
+                     let key_pattern_clone = key_pattern.clone();
+                     let start = Instant::now();
+-                    let time = event.time_msec();
+                     let token = self
+                         .common
+                         .event_loop_handle
+@@ -1863,7 +2006,7 @@ impl State {
+         // cancel grabs
+         if is_grabbed
+             && handle.modified_sym() == Keysym::Escape
+-            && event.state() == KeyState::Pressed
++            && key_state == KeyState::Pressed
+             && !modifiers.alt
+             && !modifiers.ctrl
+             && !modifiers.logo
+@@ -1882,7 +2025,7 @@ impl State {
+         }
+ 
+         if let Some(mut a11y_keyboard_monitor) = self.common.dbus_state.a11y_keyboard_monitor() {
+-            if event.state() == KeyState::Released {
++            if key_state == KeyState::Released {
+                 let removed =
+                     a11y_keyboard_monitor.remove_active_virtual_mod(handle.modified_sym());
+                 // If `Caps_Lock` is a virtual modifier, and is in locked state, clear it
+@@ -1891,7 +2034,7 @@ impl State {
+                     && (modifiers.serialized.locked & 2) != 0
+                 {
+                     let seat = seat.clone();
+-                    let key_code = event.key_code();
++                    let key_code = keycode;
+                     self.common.event_loop_handle.insert_idle(move |state| {
+                         if let Some(keyboard) = seat.get_keyboard() {
+                             let serial = SERIAL_COUNTER.next_serial();
+@@ -1916,7 +2059,7 @@ impl State {
+                         }
+                     });
+                 }
+-            } else if event.state() == KeyState::Pressed
++            } else if key_state == KeyState::Pressed
+                 && a11y_keyboard_monitor.has_virtual_mod(handle.modified_sym())
+             {
+                 a11y_keyboard_monitor.add_active_virtual_mod(handle.modified_sym());
+@@ -1932,7 +2075,7 @@ impl State {
+         }
+ 
+         // Skip released events for initially surpressed keys
+-        if event.state() == KeyState::Released
++        if key_state == KeyState::Released
+             && let Some(tokens) = seat.supressed_keys().filter(&handle)
+         {
+             for token in tokens {
+@@ -1942,7 +2085,7 @@ impl State {
+         }
+ 
+         // Handle VT switches
+-        if event.state() == KeyState::Pressed
++        if key_state == KeyState::Pressed
+             && (Keysym::XF86_Switch_VT_1.raw()..=Keysym::XF86_Switch_VT_12.raw())
+                 .contains(&handle.modified_sym().raw())
+         {
+@@ -1956,7 +2099,7 @@ impl State {
+         }
+ 
+         if let Some(a11y_keyboard_monitor) = self.common.dbus_state.a11y_keyboard_monitor()
+-            && event.state() == KeyState::Pressed
++            && key_state == KeyState::Pressed
+             && (a11y_keyboard_monitor.has_keyboard_grab()
+                 || a11y_keyboard_monitor.has_key_grab(modifiers, handle.modified_sym()))
+         {
+@@ -1978,7 +2121,7 @@ impl State {
+ 
+                 // is this a released (triggered) modifier-only binding?
+                 if binding.key.is_none()
+-                    && event.state() == KeyState::Released
++                    && key_state == KeyState::Released
+                     && !cosmic_modifiers_eq_smithay(&binding.modifiers, modifiers)
+                     && modifiers_queue.take(binding)
+                 {
+@@ -1991,7 +2134,7 @@ impl State {
+ 
+                 // could this potentially become a modifier-only binding?
+                 if binding.key.is_none()
+-                    && event.state() == KeyState::Pressed
++                    && key_state == KeyState::Pressed
+                     && cosmic_modifiers_eq_smithay(&binding.modifiers, modifiers)
+                 {
+                     modifiers_queue.set(binding.clone());
+@@ -2000,7 +2143,7 @@ impl State {
+ 
+                 // is this a normal binding?
+                 if binding.key.is_some()
+-                    && event.state() == KeyState::Pressed
++                    && key_state == KeyState::Pressed
+                     && key_matches(binding.key.unwrap())
+                     && cosmic_modifiers_eq_smithay(&binding.modifiers, modifiers)
+                 {
+diff --git a/src/libei.rs b/src/libei.rs
+index 16f410ee8..b08d625a1 100644
+--- a/src/libei.rs
++++ b/src/libei.rs
+@@ -5,9 +5,8 @@ use smithay::reexports::reis;
+ 
+ use smithay::backend::input::KeyState;
+ use smithay::backend::libei::{EiInput, EiInputEvent};
+-use smithay::input::keyboard::{Keycode, Keysym, ModifiersState, xkb};
++use smithay::input::keyboard::Keysym;
+ use smithay::reexports::calloop;
+-use smithay::utils::SERIAL_COUNTER;
+ use smithay::wayland::text_input::TextInputSeat;
+ 
+ use crate::config::xkb_config_to_wl;
+@@ -42,14 +41,30 @@ pub fn setup_ei(
+             if let Err(err) =
+                 handle_clone.insert_source(source, move |event, connection, data| match event {
+                     EiInputEvent::Connected => {
++                        let conn = connection.eis_connection().clone();
+                         let seat = connection.add_seat("default");
+                         let wants_keyboard = device_types & DEVICE_TYPE_KEYBOARD != 0;
+-                        if wants_keyboard {
++                        // build the per-connection isolated keyboard state
++                        let isolated_kbd = if wants_keyboard {
+                             let conf = data.common.config.xkb_config();
+                             let _ = seat.add_keyboard("virtual keyboard", xkb_config_to_wl(&conf));
+                             // The text device lets clients inject keysyms/utf8 directly independent of the keymap.
+                             seat.add_text("virtual text");
+-                        }
++                            match smithay::input::keyboard::IsolatedKeyboardState::new(
++                                xkb_config_to_wl(&conf),
++                            ) {
++                                Ok(iso) => Some(iso),
++                                Err(err) => {
++                                    tracing::warn!(
++                                        ?err,
++                                        "Failed to create libei isolated keyboard state"
++                                    );
++                                    None
++                                }
++                            }
++                        } else {
++                            None
++                        };
+                         if device_types & DEVICE_TYPE_POINTER != 0 {
+                             seat.add_pointer("virtual pointer");
+                             seat.add_pointer_absolute("virtual absolute pointer");
+@@ -60,23 +75,41 @@ pub fn setup_ei(
+                         // Track the seat so its virtual keyboard can be re-created when the
+                         // keyboard configuration changes at runtime.
+                         if wants_keyboard {
+-                            data.common
+-                                .ei_seats
+-                                .insert(connection.eis_connection().clone(), seat);
++                            if let Some(iso) = isolated_kbd {
++                                data.common.ei_isolated_kbd.insert(conn.clone(), iso);
++                            }
++                            data.common.ei_seats.insert(conn, seat);
+                         }
+                     }
+                     EiInputEvent::Disconnected => {
+                         data.common.ei_seats.remove(connection.eis_connection());
++                        data.common
++                            .ei_isolated_kbd
++                            .remove(connection.eis_connection());
+                     }
+                     EiInputEvent::Event(event) => {
+-                        let backend_id = InputBackendId::Ei(connection.eis_connection().clone());
+-                        data.process_input_event(event, backend_id);
++                        use smithay::backend::input::{InputEvent, KeyboardKeyEvent};
++                        // Route keyboard input through the connection's isolated state
++                        match event {
++                            InputEvent::Keyboard { event } => {
++                                data.inject_ei_key(
++                                    connection.eis_connection(),
++                                    event.key_code(),
++                                    event.state(),
++                                );
++                            }
++                            other => {
++                                let backend_id =
++                                    InputBackendId::Ei(connection.eis_connection().clone());
++                                data.process_input_event(other, backend_id);
++                            }
++                        }
+                     }
+                     EiInputEvent::TextKeysym { keysym, state } => {
+-                        data.inject_ei_keysym(keysym, state);
++                        data.inject_ei_text_keysym(connection.eis_connection(), keysym, state);
+                     }
+                     EiInputEvent::TextUtf8 { text } => {
+-                        data.inject_ei_text(&text);
++                        data.inject_ei_text(connection.eis_connection(), &text);
+                     }
+                 })
+             {
+@@ -89,85 +122,8 @@ pub fn setup_ei(
+ }
+ 
+ impl State {
+-    /// Inject a single keysym (from an EI `ei_text` device) into the focused client.
+-    ///
+-    /// Since Wayland keyboard input is keycode-based, we resolve the keysym to a `(keycode, level)`
+-    /// in the active layout, derive the modifiers that level needs, advertise them, then forward the
+-    /// keycode
+-    pub fn inject_ei_keysym(&mut self, keysym: u32, key_state: KeyState) {
+-        let seat = self.common.shell.read().seats.last_active().clone();
+-        let Some(keyboard) = seat.get_keyboard() else {
+-            return;
+-        };
+-        let keysym = Keysym::new(keysym);
+-
+-        // Resolve the keysym to a keycode + the modifier state its level requires.
+-        let resolved = keyboard.with_xkb_state(self, |ctx| {
+-            let xkb_guard = ctx.xkb().lock().unwrap();
+-            let layout = xkb_guard.active_layout();
+-            // SAFETY: the keymap is only read within this closure.
+-            let keymap = unsafe { xkb_guard.keymap() };
+-            for raw in keymap.min_keycode().raw()..=keymap.max_keycode().raw() {
+-                let keycode = Keycode::new(raw);
+-                if keymap.key_get_name(keycode).is_none() {
+-                    continue;
+-                }
+-                for level in 0..keymap.num_levels_for_key(keycode, layout.0) {
+-                    if keymap
+-                        .key_get_syms_by_level(keycode, layout.0, level)
+-                        .contains(&keysym)
+-                    {
+-                        let mut masks = [0u32; 1];
+-                        let count =
+-                            keymap.key_get_mods_for_level(keycode, layout.0, level, &mut masks);
+-                        let mods = if count > 0 && masks[0] != 0 {
+-                            let mut xkb_state = xkb::State::new(keymap);
+-                            xkb_state.update_mask(masks[0], 0, 0, 0, 0, layout.0);
+-                            let mut mods = ModifiersState::default();
+-                            mods.update_with(&xkb_state);
+-                            mods
+-                        } else {
+-                            ModifiersState::default()
+-                        };
+-                        return Some((keycode, mods));
+-                    }
+-                }
+-            }
+-            None
+-        });
+-
+-        let Some((keycode, mods)) = resolved else {
+-            tracing::warn!(
+-                "EI text keysym {:?} is not in the active layout; ignoring",
+-                keysym
+-            );
+-            return;
+-        };
+-
+-        let needs_mods = mods != ModifiersState::default();
+-        let serial = SERIAL_COUNTER.next_serial();
+-        let time = self.common.clock.now().as_millis();
+-
+-        match key_state {
+-            KeyState::Pressed => {
+-                if needs_mods {
+-                    keyboard.set_modifier_state(mods);
+-                    keyboard.advertise_modifier_state(self);
+-                }
+-                keyboard.input_forward(self, keycode, KeyState::Pressed, serial, time, needs_mods);
+-            }
+-            KeyState::Released => {
+-                keyboard.input_forward(self, keycode, KeyState::Released, serial, time, false);
+-                if needs_mods {
+-                    keyboard.set_modifier_state(ModifiersState::default());
+-                    keyboard.advertise_modifier_state(self);
+-                }
+-            }
+-        }
+-    }
+-
+     /// Inject UTF-8 text (from an EI `ei_text` device) into the focused client.
+-    pub fn inject_ei_text(&mut self, text: &str) {
++    pub fn inject_ei_text(&mut self, conn: &smithay::reexports::reis::eis::Connection, text: &str) {
+         let seat = self.common.shell.read().seats.last_active().clone();
+         let text_input = seat.text_input();
+         let mut injected = false;
+@@ -183,8 +139,8 @@ impl State {
+         for c in text.chars() {
+             let keysym = Keysym::from_char(c);
+             if keysym.raw() != 0 {
+-                self.inject_ei_keysym(keysym.raw(), KeyState::Pressed);
+-                self.inject_ei_keysym(keysym.raw(), KeyState::Released);
++                self.inject_ei_text_keysym(conn, keysym.raw(), KeyState::Pressed);
++                self.inject_ei_text_keysym(conn, keysym.raw(), KeyState::Released);
+             }
+         }
+     }
+diff --git a/src/state.rs b/src/state.rs
+index 014606c1c..cdcdcc652 100644
+--- a/src/state.rs
++++ b/src/state.rs
+@@ -251,6 +251,12 @@ pub struct Common {
+         smithay::backend::libei::EiInputSeat,
+     >,
+ 
++    /// Per-connection keyboard state for libei senders, keyed by their `eis` connection.
++    pub ei_isolated_kbd: std::collections::HashMap<
++        smithay::reexports::reis::eis::Connection,
++        smithay::input::keyboard::IsolatedKeyboardState,
++    >,
++
+     pub kiosk_child: Option<Child>,
+     pub theme: cosmic::Theme,
+ 
+@@ -754,6 +760,7 @@ impl State {
+                 should_stop: false,
+                 gesture_state: None,
+                 ei_seats: std::collections::HashMap::new(),
++                ei_isolated_kbd: std::collections::HashMap::new(),
+ 
+                 kiosk_child: None,
+                 theme: cosmic::theme::system_preference(),
+
+From 88b1f7254bf4186760b60492888efd32759582e9 Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Wed, 17 Jun 2026 21:17:37 -0600
+Subject: [PATCH 11/22] fix: proper shortcut handling in virtual keyboard
+
+---
+ src/input/mod.rs                         | 37 ++++++++++++++++--------
+ src/wayland/handlers/mod.rs              |  1 +
+ src/wayland/handlers/virtual_keyboard.rs | 24 +++++++++++++++
+ 3 files changed, 50 insertions(+), 12 deletions(-)
+ create mode 100644 src/wayland/handlers/virtual_keyboard.rs
+
+diff --git a/src/input/mod.rs b/src/input/mod.rs
+index db928dec0..e7c26a09a 100644
+--- a/src/input/mod.rs
++++ b/src/input/mod.rs
+@@ -1715,35 +1715,33 @@ impl State {
+         result
+     }
+ 
+-    /// Inject a key from a libei connection through its isolated keyboard state.
+-    pub(crate) fn inject_ei_key(
++    /// Inject a key through an isolated keyboard state: run it through the shortcut filter
++    /// and deliver it to the focused client, keeping this source's modifier/key state fully
++    /// isolated from the physical keyboard. Shared by libei connections and virtual keyboards.
++    pub(crate) fn inject_isolated_key(
+         &mut self,
+-        conn: &smithay::reexports::reis::eis::Connection,
++        seat: &Seat<State>,
++        iso: &mut smithay::input::keyboard::IsolatedKeyboardState,
+         keycode: Keycode,
+         key_state: KeyState,
+     ) {
+-        let seat = self.common.shell.read().seats.last_active().clone();
+         let Some(keyboard) = seat.get_keyboard() else {
+             return;
+         };
+         let serial = SERIAL_COUNTER.next_serial();
+         let time = self.common.clock.now().as_millis();
+-
+-        let Some(mut iso) = self.common.ei_isolated_kbd.remove(conn) else {
+-            return;
+-        };
+         let previous_modifiers = iso.modifier_state();
+         let result = keyboard
+             .input_isolated(
+                 self,
+-                &mut iso,
++                iso,
+                 keycode,
+                 key_state,
+                 serial,
+                 time,
+                 |data, modifiers, handle| {
+                     data.process_keyboard_filter(
+-                        &seat,
++                        seat,
+                         modifiers,
+                         handle,
+                         serial,
+@@ -1755,13 +1753,28 @@ impl State {
+                 },
+             )
+             .flatten();
+-        self.common.ei_isolated_kbd.insert(conn.clone(), iso);
+ 
+         if let Some((action, pattern)) = result {
+-            self.handle_action(action, &seat, serial, time, pattern, None);
++            self.handle_action(action, seat, serial, time, pattern, None);
+         }
+     }
+ 
++    /// Inject a key from a libei connection through its isolated keyboard state.
++    pub(crate) fn inject_ei_key(
++        &mut self,
++        conn: &smithay::reexports::reis::eis::Connection,
++        keycode: Keycode,
++        key_state: KeyState,
++    ) {
++        let seat = self.common.shell.read().seats.last_active().clone();
++        // Temporarily take the isolated state out so we can borrow `self` mutably for delivery.
++        let Some(mut iso) = self.common.ei_isolated_kbd.remove(conn) else {
++            return;
++        };
++        self.inject_isolated_key(&seat, &mut iso, keycode, key_state);
++        self.common.ei_isolated_kbd.insert(conn.clone(), iso);
++    }
++
+     /// Resolve a keysym from a libei `ei_text` device to a keycode
+     pub(crate) fn inject_ei_text_keysym(
+         &mut self,
+diff --git a/src/wayland/handlers/mod.rs b/src/wayland/handlers/mod.rs
+index 34d063d0c..fd84ee29e 100644
+--- a/src/wayland/handlers/mod.rs
++++ b/src/wayland/handlers/mod.rs
+@@ -35,6 +35,7 @@ pub mod shm;
+ pub mod tablet_manager;
+ pub mod toplevel_info;
+ pub mod toplevel_management;
++pub mod virtual_keyboard;
+ pub mod workspace;
+ pub mod xdg_activation;
+ pub mod xdg_foreign;
+diff --git a/src/wayland/handlers/virtual_keyboard.rs b/src/wayland/handlers/virtual_keyboard.rs
+new file mode 100644
+index 000000000..ad98d5be8
+--- /dev/null
++++ b/src/wayland/handlers/virtual_keyboard.rs
+@@ -0,0 +1,24 @@
++// SPDX-License-Identifier: GPL-3.0-only
++
++use crate::state::State;
++use smithay::{
++    backend::input::{KeyState, Keycode},
++    input::{Seat, keyboard::IsolatedKeyboardState},
++    wayland::virtual_keyboard::VirtualKeyboardHandler,
++};
++
++impl VirtualKeyboardHandler for State {
++    fn virtual_keyboard_key(
++        &mut self,
++        seat: &Seat<State>,
++        keyboard_state: &mut IsolatedKeyboardState,
++        keycode: Keycode,
++        key_state: KeyState,
++        _time: u32,
++    ) {
++        // Route the key through the shortcut filter with the virtual keyboard's own isolated
++        // state, so e.g. `Super` triggers compositor shortcuts instead of leaking to the
++        // focused client. Mirrors how libei input is handled.
++        self.inject_isolated_key(seat, keyboard_state, keycode, key_state);
++    }
++}
+
+From 7d942de2a75d0f5f46e211d9fd6311683c52024b Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Wed, 17 Jun 2026 21:57:34 -0600
+Subject: [PATCH 12/22] feat: per-source input isolation and unify ei and
+ virtual keyboard
+
+---
+ src/config/mod.rs                        |  17 +-
+ src/input/actions.rs                     |  23 ++-
+ src/input/mod.rs                         | 239 ++++++++++++++++-------
+ src/libei.rs                             |  10 +-
+ src/shell/layout/tiling/grabs/swap.rs    |   2 +
+ src/shell/seats.rs                       |  32 ++-
+ src/wayland/handlers/virtual_keyboard.rs |  39 +++-
+ src/xwayland.rs                          |   2 +-
+ 8 files changed, 276 insertions(+), 88 deletions(-)
+
+diff --git a/src/config/mod.rs b/src/config/mod.rs
+index 8561a834a..81b2a6738 100644
+--- a/src/config/mod.rs
++++ b/src/config/mod.rs
+@@ -1,6 +1,7 @@
+ // SPDX-License-Identifier: GPL-3.0-only
+ 
+ use crate::{
++    input::InputBackendId,
+     shell::Shell,
+     state::{BackendData, State},
+     utils::prelude::OutputExt,
+@@ -829,12 +830,22 @@ fn config_changed(config: cosmic_config::Config, keys: Vec<String>, state: &mut
+                     }
+                 }
+                 // Rebuild the per-connection isolated keyboard state with the new keymap
+-                // Held modifiers reset
+-                for iso in state.common.ei_isolated_kbd.values_mut() {
++                // after first releasing any keys that source still has held.
++                let ei_connections = state
++                    .common
++                    .ei_isolated_kbd
++                    .keys()
++                    .cloned()
++                    .collect::<Vec<_>>();
++                for conn in &ei_connections {
++                    state.release_ei_keyboard(conn);
++                    state.clear_input_source_state(&InputBackendId::Ei(conn.clone()));
++                }
++                for source in state.common.ei_isolated_kbd.values_mut() {
+                     match smithay::input::keyboard::IsolatedKeyboardState::new(xkb_config_to_wl(
+                         &value,
+                     )) {
+-                        Ok(new_state) => *iso = new_state,
++                        Ok(new_state) => *source = new_state,
+                         Err(err) => {
+                             warn!(?err, "Failed to update libei isolated keyboard config")
+                         }
+diff --git a/src/input/actions.rs b/src/input/actions.rs
+index 3d017697d..a4932597d 100644
+--- a/src/input/actions.rs
++++ b/src/input/actions.rs
+@@ -2,6 +2,7 @@
+ 
+ use crate::{
+     config::{Action, PrivateAction},
++    input::InputBackendId,
+     shell::{
+         FocusResult, InvalidWorkspaceIndex, MoveResult, SeatExt, Trigger, WorkspaceDelta,
+         focus::{FocusTarget, target::KeyboardFocusTarget},
+@@ -39,6 +40,7 @@ impl State {
+     pub fn handle_action(
+         &mut self,
+         action: Action,
++        backend_id: &InputBackendId,
+         seat: &Seat<State>,
+         serial: Serial,
+         time: u32,
+@@ -69,7 +71,7 @@ impl State {
+             Action::Shortcut(action) => {
+                 let propagate = propagate_by_default(&action);
+                 self.handle_shortcut_action(
+-                    action, seat, serial, time, pattern, direction, propagate,
++                    action, backend_id, seat, serial, time, pattern, direction, propagate,
+                 )
+             }
+             Action::Private(PrivateAction::Escape) => {
+@@ -143,6 +145,7 @@ impl State {
+     pub fn handle_shortcut_action(
+         &mut self,
+         action: shortcuts::Action,
++        backend_id: &InputBackendId,
+         seat: &Seat<State>,
+         serial: Serial,
+         time: u32,
+@@ -232,6 +235,7 @@ impl State {
+                 {
+                     self.handle_shortcut_action(
+                         Action::SwitchOutput(inferred),
++                        backend_id,
+                         seat,
+                         serial,
+                         time,
+@@ -271,6 +275,7 @@ impl State {
+                 {
+                     self.handle_shortcut_action(
+                         Action::SwitchOutput(inferred),
++                        backend_id,
+                         seat,
+                         serial,
+                         time,
+@@ -392,6 +397,7 @@ impl State {
+                                 } else {
+                                     Action::SendToOutput(inferred)
+                                 },
++                                backend_id,
+                                 seat,
+                                 serial,
+                                 time,
+@@ -417,6 +423,7 @@ impl State {
+                                 } else {
+                                     Action::SendToWorkspace(1)
+                                 },
++                                backend_id,
+                                 seat,
+                                 serial,
+                                 time,
+@@ -483,6 +490,7 @@ impl State {
+                                 } else {
+                                     Action::SendToOutput(inferred)
+                                 },
++                                backend_id,
+                                 seat,
+                                 serial,
+                                 time,
+@@ -508,6 +516,7 @@ impl State {
+                                 } else {
+                                     Action::SendToLastWorkspace
+                                 },
++                                backend_id,
+                                 seat,
+                                 serial,
+                                 time,
+@@ -532,7 +541,9 @@ impl State {
+                         if propagate
+                             && let Some((serial, prev_output, prev_idx)) =
+                                 shell.previous_workspace_idx.take()
+-                            && seat.last_modifier_change().is_some_and(|s| s == serial)
++                            && seat
++                                .last_modifier_change_for(backend_id)
++                                .is_some_and(|s| s == serial)
+                             && prev_output == current_output
+                         {
+                             let _ = shell.activate(
+@@ -705,6 +716,7 @@ impl State {
+                         if res.is_ok() {
+                             self.handle_shortcut_action(
+                                 Action::SwitchOutput(direction),
++                                backend_id,
+                                 seat,
+                                 serial,
+                                 time,
+@@ -741,7 +753,8 @@ impl State {
+                         };
+ 
+                         if let Some(direction) = dir {
+-                            if let Some(last_mod_serial) = seat.last_modifier_change() {
++                            if let Some(last_mod_serial) = seat.last_modifier_change_for(backend_id)
++                            {
+                                 let mut shell = self.common.shell.write();
+                                 if !shell
+                                     .previous_workspace_idx
+@@ -776,6 +789,7 @@ impl State {
+ 
+                             self.handle_shortcut_action(
+                                 action,
++                                backend_id,
+                                 seat,
+                                 serial,
+                                 time,
+@@ -800,7 +814,7 @@ impl State {
+                     .move_current_element(direction, seat);
+                 match res {
+                     MoveResult::MoveFurther(_move_further) => {
+-                        if let Some(last_mod_serial) = seat.last_modifier_change() {
++                        if let Some(last_mod_serial) = seat.last_modifier_change_for(backend_id) {
+                             let mut shell = self.common.shell.write();
+                             if !shell
+                                 .previous_workspace_idx
+@@ -834,6 +848,7 @@ impl State {
+ 
+                         self.handle_shortcut_action(
+                             action,
++                            backend_id,
+                             seat,
+                             serial,
+                             time,
+diff --git a/src/input/mod.rs b/src/input/mod.rs
+index e7c26a09a..23a9fe82a 100644
+--- a/src/input/mod.rs
++++ b/src/input/mod.rs
+@@ -11,7 +11,7 @@ use crate::{
+     },
+     input::gestures::{GestureState, SwipeAction},
+     shell::{
+-        LastModifierChange, SeatExt, Trigger,
++        SeatExt, Trigger,
+         focus::{
+             Stage, render_input_order,
+             target::{KeyboardFocusTarget, PointerFocusTarget},
+@@ -81,7 +81,7 @@ use std::{
+     any::Any,
+     borrow::Cow,
+     cell::RefCell,
+-    collections::HashSet,
++    collections::{HashMap, HashSet},
+     ops::ControlFlow,
+     time::{Duration, Instant},
+ };
+@@ -98,6 +98,8 @@ pub enum InputBackendId {
+     Normal,
+     /// A specific Ei client connection
+     Ei(smithay::reexports::reis::eis::Connection),
++    /// The `zwp_virtual_keyboard_v1` protocol (all virtual keyboards share this source)
++    VirtualKeyboard,
+ }
+ 
+ /// Used for debouncing focus updates due to pointer motion, if after the focus change is
+@@ -112,19 +114,35 @@ pub struct PointerFocusState {
+ }
+ 
+ #[derive(Default)]
+-pub struct SupressedKeys(RefCell<Vec<(Keycode, Option<RegistrationToken>)>>);
++pub struct SupressedKeys(
++    RefCell<HashMap<InputBackendId, Vec<(Keycode, Option<RegistrationToken>)>>>,
++);
+ #[derive(Default)]
+-pub struct SupressedButtons(RefCell<HashSet<u32>>);
++pub struct SupressedButtons(RefCell<HashMap<InputBackendId, HashSet<u32>>>);
+ #[derive(Default, Debug)]
+-pub struct ModifiersShortcutQueue(RefCell<Option<shortcuts::Binding>>);
++pub struct ModifiersShortcutQueue(RefCell<HashMap<InputBackendId, shortcuts::Binding>>);
+ 
+ impl SupressedKeys {
+-    fn add(&self, keysym: &KeysymHandle, token: impl Into<Option<RegistrationToken>>) {
+-        self.0.borrow_mut().push((keysym.raw_code(), token.into()));
++    fn add(
++        &self,
++        backend_id: &InputBackendId,
++        keysym: &KeysymHandle,
++        token: impl Into<Option<RegistrationToken>>,
++    ) {
++        self.0
++            .borrow_mut()
++            .entry(backend_id.clone())
++            .or_default()
++            .push((keysym.raw_code(), token.into()));
+     }
+ 
+-    fn filter(&self, keysym: &KeysymHandle) -> Option<Vec<RegistrationToken>> {
+-        let mut keys = self.0.borrow_mut();
++    fn filter(
++        &self,
++        backend_id: &InputBackendId,
++        keysym: &KeysymHandle,
++    ) -> Option<Vec<RegistrationToken>> {
++        let mut by_source = self.0.borrow_mut();
++        let keys = by_source.get_mut(backend_id)?;
+         let (removed, remaining) = keys
+             .drain(..)
+             .partition(|(key, _)| *key == keysym.raw_code());
+@@ -141,37 +159,50 @@ impl SupressedKeys {
+                 .collect::<Vec<_>>(),
+         )
+     }
++
++    fn clear_source(&self, backend_id: &InputBackendId) {
++        self.0.borrow_mut().remove(backend_id);
++    }
+ }
+ 
+ impl SupressedButtons {
+-    fn add(&self, button: u32) {
+-        self.0.borrow_mut().insert(button);
++    fn add(&self, backend_id: &InputBackendId, button: u32) {
++        self.0
++            .borrow_mut()
++            .entry(backend_id.clone())
++            .or_default()
++            .insert(button);
++    }
++
++    fn remove(&self, backend_id: &InputBackendId, button: u32) -> bool {
++        self.0
++            .borrow_mut()
++            .get_mut(backend_id)
++            .is_some_and(|buttons| buttons.remove(&button))
+     }
+ 
+-    fn remove(&self, button: u32) -> bool {
+-        self.0.borrow_mut().remove(&button)
++    fn clear_source(&self, backend_id: &InputBackendId) {
++        self.0.borrow_mut().remove(backend_id);
+     }
+ }
+ 
+ impl ModifiersShortcutQueue {
+-    pub fn set(&self, binding: shortcuts::Binding) {
+-        let mut set = self.0.borrow_mut();
+-        *set = Some(binding);
++    pub fn set(&self, backend_id: &InputBackendId, binding: shortcuts::Binding) {
++        self.0.borrow_mut().insert(backend_id.clone(), binding);
+     }
+ 
+-    pub fn take(&self, binding: &shortcuts::Binding) -> bool {
++    pub fn take(&self, backend_id: &InputBackendId, binding: &shortcuts::Binding) -> bool {
+         let mut set = self.0.borrow_mut();
+-        if set.is_some() && set.as_ref().unwrap() == binding {
+-            *set = None;
++        if set.get(backend_id).is_some_and(|queued| queued == binding) {
++            set.remove(backend_id);
+             true
+         } else {
+             false
+         }
+     }
+ 
+-    pub fn clear(&self) {
+-        let mut set = self.0.borrow_mut();
+-        *set = None;
++    pub fn clear(&self, backend_id: &InputBackendId) {
++        self.0.borrow_mut().remove(backend_id);
+     }
+ }
+ 
+@@ -247,6 +278,7 @@ impl State {
+                             time,
+                             |data, modifiers, handle| {
+                                 data.process_keyboard_filter(
++                                    &backend_id,
+                                     &seat,
+                                     modifiers,
+                                     handle,
+@@ -266,7 +298,7 @@ impl State {
+                                 FilterResult::<()>::Forward
+                             });
+                         }
+-                        self.handle_action(action, &seat, serial, time, pattern, None)
++                        self.handle_action(action, &backend_id, &seat, serial, time, pattern, None)
+                     }
+ 
+                     // If we want to track numlock state so it can be reused on the next boot...
+@@ -755,7 +787,7 @@ impl State {
+                 let serial = SERIAL_COUNTER.next_serial();
+                 let button = event.button_code();
+ 
+-                let mut pass_event = !seat.supressed_buttons().remove(button);
++                let mut pass_event = !seat.supressed_buttons().remove(&backend_id, button);
+                 if event.state() == ButtonState::Pressed {
+                     // change the keyboard focus unless the pointer is grabbed
+                     // We test for any matching surface type here but always use the root
+@@ -783,17 +815,18 @@ impl State {
+                                     // aimed at the compositor and shouldn't be passed
+                                     // to the application.
+                                     pass_event = false;
+-                                    seat.supressed_buttons().add(button);
++                                    seat.supressed_buttons().add(&backend_id, button);
+                                 };
+ 
+                                 fn dispatch_grab<G: PointerGrab<State> + 'static>(
+                                     grab: Option<(G, smithay::input::pointer::Focus)>,
+                                     seat: Seat<State>,
++                                    backend_id: &InputBackendId,
+                                     serial: Serial,
+                                     state: &mut State,
+                                 ) {
+                                     if let Some((target, focus)) = grab {
+-                                        seat.modifiers_shortcut_queue().clear();
++                                        seat.modifiers_shortcut_queue().clear(backend_id);
+ 
+                                         seat.get_pointer()
+                                             .unwrap()
+@@ -805,6 +838,7 @@ impl State {
+                                     match mouse_button {
+                                         smithay::backend::input::MouseButton::Left => {
+                                             supress_button();
++                                            let backend_id = backend_id.clone();
+                                             self.common.event_loop_handle.insert_idle(
+                                                 move |state| {
+                                                     let mut shell = state.common.shell.write();
+@@ -819,12 +853,19 @@ impl State {
+                                                         false,
+                                                     );
+                                                     drop(shell);
+-                                                    dispatch_grab(res, seat_clone, serial, state);
++                                                    dispatch_grab(
++                                                        res,
++                                                        seat_clone,
++                                                        &backend_id,
++                                                        serial,
++                                                        state,
++                                                    );
+                                                 },
+                                             );
+                                         }
+                                         smithay::backend::input::MouseButton::Right => {
+                                             supress_button();
++                                            let backend_id = backend_id.clone();
+                                             self.common.event_loop_handle.insert_idle(
+                                                 move |state| {
+                                                     let mut shell = state.common.shell.write();
+@@ -882,7 +923,13 @@ impl State {
+                                                         false,
+                                                     );
+                                                     drop(shell);
+-                                                    dispatch_grab(res, seat_clone, serial, state);
++                                                    dispatch_grab(
++                                                        res,
++                                                        seat_clone,
++                                                        &backend_id,
++                                                        serial,
++                                                        state,
++                                                    );
+                                                 },
+                                             );
+                                         }
+@@ -960,7 +1007,7 @@ impl State {
+                             .accessibility_zoom
+                             .enable_mouse_zoom_shortcuts
+                     {
+-                        seat.modifiers_shortcut_queue().clear();
++                        seat.modifiers_shortcut_queue().clear(&backend_id);
+                         if let Some(mut percentage) = event
+                             .amount_v120(Axis::Vertical)
+                             .map(|val| val / 120.)
+@@ -1664,8 +1711,38 @@ impl State {
+         }
+     }
+ 
++    pub(crate) fn clear_input_source_state(&mut self, backend_id: &InputBackendId) {
++        let seats = self
++            .common
++            .shell
++            .read()
++            .seats
++            .iter()
++            .cloned()
++            .collect::<Vec<_>>();
++        for seat in seats {
++            seat.supressed_keys().clear_source(backend_id);
++            seat.supressed_buttons().clear_source(backend_id);
++            seat.modifiers_shortcut_queue().clear(backend_id);
++        }
++    }
++
++    pub(crate) fn release_ei_keyboard(&mut self, conn: &smithay::reexports::reis::eis::Connection) {
++        let pressed_keys = self
++            .common
++            .ei_isolated_kbd
++            .get(conn)
++            .map(|iso| iso.pressed_keys().collect::<Vec<_>>())
++            .unwrap_or_default();
++
++        for keycode in pressed_keys.into_iter().rev() {
++            self.inject_ei_key_internal(conn, keycode, KeyState::Released, false);
++        }
++    }
++
+     pub(crate) fn process_keyboard_filter(
+         &mut self,
++        backend_id: &InputBackendId,
+         seat: &Seat<State>,
+         modifiers: &ModifiersState,
+         handle: KeysymHandle<'_>,
+@@ -1676,13 +1753,7 @@ impl State {
+         previous_modifiers: ModifiersState,
+     ) -> FilterResult<Option<(Action, shortcuts::Binding)>> {
+         if previous_modifiers != *modifiers {
+-            *seat
+-                .user_data()
+-                .get::<LastModifierChange>()
+-                .unwrap()
+-                .0
+-                .lock()
+-                .unwrap() = Some(serial);
++            seat.set_last_modifier_change(backend_id, serial);
+         }
+ 
+         let current_focus = seat.get_keyboard().unwrap().current_focus();
+@@ -1698,8 +1769,9 @@ impl State {
+         });
+         let sym = handle.modified_sym();
+ 
+-        let result =
+-            self.filter_keyboard_input(seat, modifiers, handle, serial, keycode, key_state, time);
++        let result = self.filter_keyboard_input(
++            backend_id, seat, modifiers, handle, serial, keycode, key_state, time,
++        );
+ 
+         if (matches!(result, FilterResult::Forward)
+             && !seat.get_keyboard().unwrap().is_grabbed()
+@@ -1709,21 +1781,26 @@ impl State {
+             || key_state == KeyState::Released
+         {
+             self.common
+-                .xwayland_notify_key_event(sym, keycode, key_state, serial, time);
++                .xwayland_notify_key_event(sym, keycode, key_state, *modifiers, serial, time);
+         }
+ 
+         result
+     }
+ 
+-    /// Inject a key through an isolated keyboard state: run it through the shortcut filter
+-    /// and deliver it to the focused client, keeping this source's modifier/key state fully
+-    /// isolated from the physical keyboard. Shared by libei connections and virtual keyboards.
++    /// Inject a key through an isolated keyboard state: run it through the per-source shortcut
++    /// filter and deliver it to the focused client, keeping this source's modifier/key state
++    /// fully isolated from the physical keyboard. Shared by libei connections and virtual keyboards.
++    ///
++    /// `handle_shortcuts` is `false` when synthesizing releases during teardown, so still-held
++    /// keys are just forwarded without re-triggering bindings.
+     pub(crate) fn inject_isolated_key(
+         &mut self,
++        backend_id: &InputBackendId,
+         seat: &Seat<State>,
+         iso: &mut smithay::input::keyboard::IsolatedKeyboardState,
+         keycode: Keycode,
+         key_state: KeyState,
++        handle_shortcuts: bool,
+     ) {
+         let Some(keyboard) = seat.get_keyboard() else {
+             return;
+@@ -1740,22 +1817,27 @@ impl State {
+                 serial,
+                 time,
+                 |data, modifiers, handle| {
+-                    data.process_keyboard_filter(
+-                        seat,
+-                        modifiers,
+-                        handle,
+-                        serial,
+-                        time,
+-                        keycode,
+-                        key_state,
+-                        previous_modifiers,
+-                    )
++                    if handle_shortcuts {
++                        data.process_keyboard_filter(
++                            backend_id,
++                            seat,
++                            modifiers,
++                            handle,
++                            serial,
++                            time,
++                            keycode,
++                            key_state,
++                            previous_modifiers,
++                        )
++                    } else {
++                        FilterResult::Forward
++                    }
+                 },
+             )
+             .flatten();
+ 
+         if let Some((action, pattern)) = result {
+-            self.handle_action(action, seat, serial, time, pattern, None);
++            self.handle_action(action, backend_id, seat, serial, time, pattern, None);
+         }
+     }
+ 
+@@ -1765,13 +1847,31 @@ impl State {
+         conn: &smithay::reexports::reis::eis::Connection,
+         keycode: Keycode,
+         key_state: KeyState,
++    ) {
++        self.inject_ei_key_internal(conn, keycode, key_state, true);
++    }
++
++    fn inject_ei_key_internal(
++        &mut self,
++        conn: &smithay::reexports::reis::eis::Connection,
++        keycode: Keycode,
++        key_state: KeyState,
++        handle_shortcuts: bool,
+     ) {
+         let seat = self.common.shell.read().seats.last_active().clone();
++        let backend_id = InputBackendId::Ei(conn.clone());
+         // Temporarily take the isolated state out so we can borrow `self` mutably for delivery.
+         let Some(mut iso) = self.common.ei_isolated_kbd.remove(conn) else {
+             return;
+         };
+-        self.inject_isolated_key(&seat, &mut iso, keycode, key_state);
++        self.inject_isolated_key(
++            &backend_id,
++            &seat,
++            &mut iso,
++            keycode,
++            key_state,
++            handle_shortcuts,
++        );
+         self.common.ei_isolated_kbd.insert(conn.clone(), iso);
+     }
+ 
+@@ -1835,6 +1935,7 @@ impl State {
+     #[profiling::function]
+     pub fn filter_keyboard_input(
+         &mut self,
++        backend_id: &InputBackendId,
+         seat: &Seat<Self>,
+         modifiers: &ModifiersState,
+         handle: KeysymHandle<'_>,
+@@ -1978,7 +2079,7 @@ impl State {
+                 };
+ 
+                 if key_state == KeyState::Released {
+-                    if let Some(tokens) = seat.supressed_keys().filter(&handle) {
++                    if let Some(tokens) = seat.supressed_keys().filter(backend_id, &handle) {
+                         for token in tokens {
+                             self.common.event_loop_handle.remove(token);
+                         }
+@@ -1987,6 +2088,7 @@ impl State {
+                     let seat_clone = seat.clone();
+                     let action_clone = action.clone();
+                     let key_pattern_clone = key_pattern.clone();
++                    let backend_id_clone = backend_id.clone();
+                     let start = Instant::now();
+                     let token = self
+                         .common
+@@ -1997,6 +2099,7 @@ impl State {
+                                 let duration = current.duration_since(start).as_millis();
+                                 state.handle_action(
+                                     action_clone.clone(),
++                                    &backend_id_clone,
+                                     &seat_clone,
+                                     serial,
+                                     time.overflowing_add(duration as u32).0,
+@@ -2008,7 +2111,7 @@ impl State {
+                         )
+                         .ok();
+ 
+-                    seat.supressed_keys().add(&handle, token);
++                    seat.supressed_keys().add(backend_id, &handle, token);
+                 }
+                 return FilterResult::Intercept(Some((action, key_pattern)));
+             }
+@@ -2025,7 +2128,7 @@ impl State {
+             && !modifiers.logo
+             && !modifiers.shift
+         {
+-            seat.supressed_keys().add(&handle, None);
++            seat.supressed_keys().add(backend_id, &handle, None);
+             return FilterResult::Intercept(Some((
+                 Action::Private(PrivateAction::Escape),
+                 shortcuts::Binding {
+@@ -2081,7 +2184,7 @@ impl State {
+                     "active virtual mods: {:?}",
+                     a11y_keyboard_monitor.active_virtual_mods()
+                 );
+-                seat.supressed_keys().add(&handle, None);
++                seat.supressed_keys().add(backend_id, &handle, None);
+ 
+                 return FilterResult::Intercept(None);
+             }
+@@ -2089,7 +2192,7 @@ impl State {
+ 
+         // Skip released events for initially surpressed keys
+         if key_state == KeyState::Released
+-            && let Some(tokens) = seat.supressed_keys().filter(&handle)
++            && let Some(tokens) = seat.supressed_keys().filter(backend_id, &handle)
+         {
+             for token in tokens {
+                 self.common.event_loop_handle.remove(token);
+@@ -2107,7 +2210,7 @@ impl State {
+             ) {
+                 error!(?err, "Failed switching virtual terminal.");
+             }
+-            seat.supressed_keys().add(&handle, None);
++            seat.supressed_keys().add(backend_id, &handle, None);
+             return FilterResult::Intercept(None);
+         }
+ 
+@@ -2117,8 +2220,8 @@ impl State {
+                 || a11y_keyboard_monitor.has_key_grab(modifiers, handle.modified_sym()))
+         {
+             let modifiers_queue = seat.modifiers_shortcut_queue();
+-            modifiers_queue.clear();
+-            seat.supressed_keys().add(&handle, None);
++            modifiers_queue.clear(backend_id);
++            seat.supressed_keys().add(backend_id, &handle, None);
+             return FilterResult::Intercept(None);
+         }
+ 
+@@ -2136,9 +2239,9 @@ impl State {
+                 if binding.key.is_none()
+                     && key_state == KeyState::Released
+                     && !cosmic_modifiers_eq_smithay(&binding.modifiers, modifiers)
+-                    && modifiers_queue.take(binding)
++                    && modifiers_queue.take(backend_id, binding)
+                 {
+-                    modifiers_queue.clear();
++                    modifiers_queue.clear(backend_id);
+                     return FilterResult::Intercept(Some((
+                         Action::Shortcut(action.clone()),
+                         binding.clone(),
+@@ -2150,7 +2253,7 @@ impl State {
+                     && key_state == KeyState::Pressed
+                     && cosmic_modifiers_eq_smithay(&binding.modifiers, modifiers)
+                 {
+-                    modifiers_queue.set(binding.clone());
++                    modifiers_queue.set(backend_id, binding.clone());
+                     clear_queue = false;
+                 }
+ 
+@@ -2160,8 +2263,8 @@ impl State {
+                     && key_matches(binding.key.unwrap())
+                     && cosmic_modifiers_eq_smithay(&binding.modifiers, modifiers)
+                 {
+-                    modifiers_queue.clear();
+-                    seat.supressed_keys().add(&handle, None);
++                    modifiers_queue.clear(backend_id);
++                    seat.supressed_keys().add(backend_id, &handle, None);
+                     return FilterResult::Intercept(Some((
+                         Action::Shortcut(action.clone()),
+                         binding.clone(),
+@@ -2172,7 +2275,7 @@ impl State {
+ 
+         // no binding
+         if clear_queue {
+-            seat.modifiers_shortcut_queue().clear();
++            seat.modifiers_shortcut_queue().clear(backend_id);
+         }
+         // keys are passed through to apps
+         FilterResult::Forward
+diff --git a/src/libei.rs b/src/libei.rs
+index b08d625a1..9080e27de 100644
+--- a/src/libei.rs
++++ b/src/libei.rs
+@@ -82,10 +82,12 @@ pub fn setup_ei(
+                         }
+                     }
+                     EiInputEvent::Disconnected => {
+-                        data.common.ei_seats.remove(connection.eis_connection());
+-                        data.common
+-                            .ei_isolated_kbd
+-                            .remove(connection.eis_connection());
++                        let conn = connection.eis_connection().clone();
++                        let backend_id = InputBackendId::Ei(conn.clone());
++                        data.release_ei_keyboard(&conn);
++                        data.clear_input_source_state(&backend_id);
++                        data.common.ei_seats.remove(&conn);
++                        data.common.ei_isolated_kbd.remove(&conn);
+                     }
+                     EiInputEvent::Event(event) => {
+                         use smithay::backend::input::{InputEvent, KeyboardKeyEvent};
+diff --git a/src/shell/layout/tiling/grabs/swap.rs b/src/shell/layout/tiling/grabs/swap.rs
+index 4c22209f7..afe93cf07 100644
+--- a/src/shell/layout/tiling/grabs/swap.rs
++++ b/src/shell/layout/tiling/grabs/swap.rs
+@@ -13,6 +13,7 @@ use smithay::{
+ 
+ use crate::{
+     config::key_bindings::cosmic_modifiers_from_smithay,
++    input::InputBackendId,
+     shell::{Trigger, layout::tiling::NodeDesc},
+     state::State,
+ };
+@@ -73,6 +74,7 @@ impl KeyboardGrab<State> for SwapWindowGrab {
+ 
+         data.handle_shortcut_action(
+             shortcuts::Action::Focus(direction),
++            &InputBackendId::Normal,
+             &self.seat,
+             serial,
+             time,
+diff --git a/src/shell/seats.rs b/src/shell/seats.rs
+index 8bc2f158e..1a668c71a 100644
+--- a/src/shell/seats.rs
++++ b/src/shell/seats.rs
+@@ -198,7 +198,7 @@ struct FocusedOutput(pub Mutex<Option<Output>>);
+ pub struct PointerConstraintHint(pub Mutex<Option<(WlSurface, Point<f64, Logical>)>>);
+ 
+ #[derive(Default)]
+-pub struct LastModifierChange(pub Mutex<Option<Serial>>);
++pub struct LastModifierChange(pub Mutex<(HashMap<InputBackendId, Serial>, Option<Serial>)>);
+ 
+ pub fn create_seat(
+     dh: &DisplayHandle,
+@@ -272,6 +272,8 @@ pub trait SeatExt {
+     fn supressed_buttons(&self) -> &SupressedButtons;
+     fn modifiers_shortcut_queue(&self) -> &ModifiersShortcutQueue;
+     fn last_modifier_change(&self) -> Option<Serial>;
++    fn last_modifier_change_for(&self, backend_id: &InputBackendId) -> Option<Serial>;
++    fn set_last_modifier_change(&self, backend_id: &InputBackendId, serial: Serial);
+     fn pointer_constraint_hint(&self) -> Option<(WlSurface, Point<f64, Logical>)>;
+     fn set_pointer_constraint_hint(&self, hint: Option<(WlSurface, Point<f64, Logical>)>);
+ 
+@@ -350,13 +352,37 @@ impl SeatExt for Seat<State> {
+     }
+ 
+     fn last_modifier_change(&self) -> Option<Serial> {
+-        *self
+-            .user_data()
++        self.user_data()
+             .get::<LastModifierChange>()
+             .unwrap()
+             .0
+             .lock()
+             .unwrap()
++            .1
++    }
++
++    fn last_modifier_change_for(&self, backend_id: &InputBackendId) -> Option<Serial> {
++        self.user_data()
++            .get::<LastModifierChange>()
++            .unwrap()
++            .0
++            .lock()
++            .unwrap()
++            .0
++            .get(backend_id)
++            .copied()
++    }
++
++    fn set_last_modifier_change(&self, backend_id: &InputBackendId, serial: Serial) {
++        let mut guard = self
++            .user_data()
++            .get::<LastModifierChange>()
++            .unwrap()
++            .0
++            .lock()
++            .unwrap();
++        guard.0.insert(backend_id.clone(), serial);
++        guard.1 = Some(serial);
+     }
+ 
+     fn pointer_constraint_hint(&self) -> Option<(WlSurface, Point<f64, Logical>)> {
+diff --git a/src/wayland/handlers/virtual_keyboard.rs b/src/wayland/handlers/virtual_keyboard.rs
+index ad98d5be8..0650133dc 100644
+--- a/src/wayland/handlers/virtual_keyboard.rs
++++ b/src/wayland/handlers/virtual_keyboard.rs
+@@ -1,6 +1,6 @@
+ // SPDX-License-Identifier: GPL-3.0-only
+ 
+-use crate::state::State;
++use crate::{input::InputBackendId, state::State};
+ use smithay::{
+     backend::input::{KeyState, Keycode},
+     input::{Seat, keyboard::IsolatedKeyboardState},
+@@ -16,9 +16,38 @@ impl VirtualKeyboardHandler for State {
+         key_state: KeyState,
+         _time: u32,
+     ) {
+-        // Route the key through the shortcut filter with the virtual keyboard's own isolated
+-        // state, so e.g. `Super` triggers compositor shortcuts instead of leaking to the
+-        // focused client. Mirrors how libei input is handled.
+-        self.inject_isolated_key(seat, keyboard_state, keycode, key_state);
++        // Route the key through the per-source shortcut filter with the virtual keyboard's own
++        // isolated state, so e.g. `Super` triggers compositor shortcuts instead of leaking to
++        // the focused client. Mirrors how libei input is handled.
++        self.inject_isolated_key(
++            &InputBackendId::VirtualKeyboard,
++            seat,
++            keyboard_state,
++            keycode,
++            key_state,
++            true,
++        );
++    }
++
++    fn virtual_keyboard_destroyed(
++        &mut self,
++        seat: &Seat<State>,
++        keyboard_state: &mut IsolatedKeyboardState,
++    ) {
++        // Release any keys the virtual keyboard still holds so they don't stick in the focused
++        // client, then drop the source's suppressed-key/shortcut bookkeeping.
++        let backend_id = InputBackendId::VirtualKeyboard;
++        let held = keyboard_state.pressed_keys().collect::<Vec<_>>();
++        for keycode in held.into_iter().rev() {
++            self.inject_isolated_key(
++                &backend_id,
++                seat,
++                keyboard_state,
++                keycode,
++                KeyState::Released,
++                false,
++            );
++        }
++        self.clear_input_source_state(&backend_id);
+     }
+ }
+diff --git a/src/xwayland.rs b/src/xwayland.rs
+index d2effb96a..00d0e31b6 100644
+--- a/src/xwayland.rs
++++ b/src/xwayland.rs
+@@ -394,6 +394,7 @@ impl Common {
+         sym: Keysym,
+         code: Keycode,
+         state: KeyState,
++        modifiers: ModifiersState,
+         serial: Serial,
+         time: u32,
+     ) {
+@@ -418,7 +419,6 @@ impl Common {
+             .last_active()
+             .get_keyboard()
+             .unwrap();
+-        let modifiers = keyboard.modifier_state();
+         let is_modifier = sym.is_modifier_key();
+ 
+         let xstate = self.xwayland_state.as_mut().unwrap();
+
+From 40f23189dc2aa2c7865696fda320d15957c224f4 Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Thu, 18 Jun 2026 10:53:37 -0600
+Subject: [PATCH 13/22] fix: literal text via `ei_text.utf8` should never cause
+ shortcuts
+
+---
+ src/input/mod.rs |  3 ++-
+ src/libei.rs     | 12 +++++++++---
+ 2 files changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/src/input/mod.rs b/src/input/mod.rs
+index 23a9fe82a..7b261ae7b 100644
+--- a/src/input/mod.rs
++++ b/src/input/mod.rs
+@@ -1881,6 +1881,7 @@ impl State {
+         conn: &smithay::reexports::reis::eis::Connection,
+         keysym: u32,
+         key_state: KeyState,
++        handle_shortcuts: bool,
+     ) {
+         use smithay::wayland::text_input::TextInputSeat;
+ 
+@@ -1928,7 +1929,7 @@ impl State {
+             );
+             return;
+         };
+-        self.inject_ei_key(conn, keycode, key_state);
++        self.inject_ei_key_internal(conn, keycode, key_state, handle_shortcuts);
+     }
+ 
+     /// Determine is key event should be intercepted as a key binding, or forwarded to surface
+diff --git a/src/libei.rs b/src/libei.rs
+index 9080e27de..dca7e8f14 100644
+--- a/src/libei.rs
++++ b/src/libei.rs
+@@ -108,7 +108,12 @@ pub fn setup_ei(
+                         }
+                     }
+                     EiInputEvent::TextKeysym { keysym, state } => {
+-                        data.inject_ei_text_keysym(connection.eis_connection(), keysym, state);
++                        data.inject_ei_text_keysym(
++                            connection.eis_connection(),
++                            keysym,
++                            state,
++                            true, // explicit keysym could cause shortcuts
++                        );
+                     }
+                     EiInputEvent::TextUtf8 { text } => {
+                         data.inject_ei_text(connection.eis_connection(), &text);
+@@ -141,8 +146,9 @@ impl State {
+         for c in text.chars() {
+             let keysym = Keysym::from_char(c);
+             if keysym.raw() != 0 {
+-                self.inject_ei_text_keysym(conn, keysym.raw(), KeyState::Pressed);
+-                self.inject_ei_text_keysym(conn, keysym.raw(), KeyState::Released);
++                // Literal text: when  we fall back to keycodes must never trigger shortcuts
++                self.inject_ei_text_keysym(conn, keysym.raw(), KeyState::Pressed, false);
++                self.inject_ei_text_keysym(conn, keysym.raw(), KeyState::Released, false);
+             }
+         }
+     }
+
+From 54e70ae02b603f2c5b117d6b11efab7bf2de68dd Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Thu, 18 Jun 2026 21:39:30 -0600
+Subject: [PATCH 14/22] feat: inject ei_text keysyms via KWin-style
+ spare-keycode remap
+
+---
+ src/input/mod.rs | 108 ++++++++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 101 insertions(+), 7 deletions(-)
+
+diff --git a/src/input/mod.rs b/src/input/mod.rs
+index 7b261ae7b..4e17af013 100644
+--- a/src/input/mod.rs
++++ b/src/input/mod.rs
+@@ -1917,19 +1917,113 @@ impl State {
+             // No active text-input: fall through to keycode injection (press and release).
+         }
+ 
+-        let Some(keycode) = self
++        // If the keysym exists in the active layout, inject its real keycode with the
++        // shift-level modifiers applied (no keymap change). Out-of-layout / Unicode keysyms
++        // have no keycode and can only be delivered via the text-input fast path above.
++        // TODO: update this doc when we have the final solution
++        let resolved = self
+             .common
+             .ei_isolated_kbd
+             .get(conn)
+-            .and_then(|iso| iso.keycode_for_keysym(keysym))
+-        else {
+-            tracing::warn!(
+-                "EI text keysym {:?} is not in the active layout; ignoring",
+-                keysym
++            .and_then(|iso| iso.keycode_for_keysym(keysym));
++
++        match resolved {
++            Some((keycode, mask)) => {
++                self.inject_ei_keysym_in_layout(conn, keycode, mask, key_state, handle_shortcuts)
++            }
++            // Out-of-layout / Unicode: bind a spare keycode to the keysym and inject it, on the
++            // press event only (KWin's fallback).
++            None if key_state == KeyState::Pressed => {
++                self.inject_ei_keysym_remapped(conn, keysym, handle_shortcuts)
++            }
++            None => {}
++        }
++    }
++
++    /// Inject an in-layout keysym by its real keycode, bracketing it with the shift-level
++    /// modifiers it needs (KWin's primary keysym-injection path).
++    fn inject_ei_keysym_in_layout(
++        &mut self,
++        conn: &smithay::reexports::reis::eis::Connection,
++        keycode: Keycode,
++        mask: u32,
++        key_state: KeyState,
++        handle_shortcuts: bool,
++    ) {
++        let seat = self.common.shell.read().seats.last_active().clone();
++        let Some(keyboard) = seat.get_keyboard() else {
++            return;
++        };
++        let backend_id = InputBackendId::Ei(conn.clone());
++        let Some(mut iso) = self.common.ei_isolated_kbd.remove(conn) else {
++            return;
++        };
++
++        if mask == 0 {
++            self.inject_isolated_key(
++                &backend_id,
++                &seat,
++                &mut iso,
++                keycode,
++                key_state,
++                handle_shortcuts,
+             );
++        } else {
++            // Momentarily OR in the level's modifiers, deliver them, send the key, then restore
++            // the real modifier state (so e.g. injecting `!` doesn't leave Shift stuck).
++            let (depressed, latched, locked, layout) = iso.serialized_mods();
++            iso.update_modifiers(depressed | mask, latched, locked, layout);
++            keyboard.input_isolated_modifiers(self, &iso);
++            self.inject_isolated_key(
++                &backend_id,
++                &seat,
++                &mut iso,
++                keycode,
++                key_state,
++                handle_shortcuts,
++            );
++            iso.update_modifiers(depressed, latched, locked, layout);
++            keyboard.input_isolated_modifiers(self, &iso);
++        }
++
++        self.common.ei_isolated_kbd.insert(conn.clone(), iso);
++    }
++
++    /// Inject an out-of-layout keysym via a temporary spare-keycode keymap (KWin's fallback),
++    /// as an atomic press+release so the keymap only changes while no key is held.
++    fn inject_ei_keysym_remapped(
++        &mut self,
++        conn: &smithay::reexports::reis::eis::Connection,
++        keysym: Keysym,
++        handle_shortcuts: bool,
++    ) {
++        let seat = self.common.shell.read().seats.last_active().clone();
++        let backend_id = InputBackendId::Ei(conn.clone());
++        let Some(mut iso) = self.common.ei_isolated_kbd.remove(conn) else {
+             return;
+         };
+-        self.inject_ei_key_internal(conn, keycode, key_state, handle_shortcuts);
++        if let Some(keycode) = iso.remap_keysym_to_spare_keycode(keysym) {
++            self.inject_isolated_key(
++                &backend_id,
++                &seat,
++                &mut iso,
++                keycode,
++                KeyState::Pressed,
++                handle_shortcuts,
++            );
++            self.inject_isolated_key(
++                &backend_id,
++                &seat,
++                &mut iso,
++                keycode,
++                KeyState::Released,
++                handle_shortcuts,
++            );
++            iso.restore_keymap();
++        } else {
++            tracing::warn!("EI text keysym {:?} could not be mapped; ignoring", keysym);
++        }
++        self.common.ei_isolated_kbd.insert(conn.clone(), iso);
+     }
+ 
+     /// Determine is key event should be intercepted as a key binding, or forwarded to surface
+
+From 5f716b01b22c2c79d4d03f01b5eee1c6828ce39f Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Fri, 19 Jun 2026 12:47:33 -0600
+Subject: [PATCH 15/22] fix: loss of focus after layout change
+
+---
+ src/config/mod.rs | 12 ++++--------
+ 1 file changed, 4 insertions(+), 8 deletions(-)
+
+diff --git a/src/config/mod.rs b/src/config/mod.rs
+index 81b2a6738..3cbf8a907 100644
+--- a/src/config/mod.rs
++++ b/src/config/mod.rs
+@@ -821,14 +821,10 @@ fn config_changed(config: cosmic_config::Config, keys: Vec<String>, state: &mut
+                         }
+                     }
+                 }
+-                // Re-create the virtual keyboard on each libei sender seat with the new keymap.
+-                for seat in state.common.ei_seats.values() {
+-                    if let Err(err) =
+-                        seat.add_keyboard("virtual keyboard", xkb_config_to_wl(&value))
+-                    {
+-                        warn!(?err, "Failed to update libei virtual keyboard config");
+-                    }
+-                }
++                // TODO: we deliberately do NOT recreate the EIS virtual keyboard device
++                // here. It was causing loss of focus when layout changes. I'll have to come back to
++                // this issue.
++
+                 // Rebuild the per-connection isolated keyboard state with the new keymap
+                 // after first releasing any keys that source still has held.
+                 let ei_connections = state
+
+From 69c2141f245722f85d25cabf35a490bccfc0c6bd Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Thu, 18 Jun 2026 17:03:40 -0600
+Subject: [PATCH 16/22] DROP ME: allowlist cosmic-remote-desktop in the EI
+ service
+
+---
+ src/dbus/ei.rs | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/src/dbus/ei.rs b/src/dbus/ei.rs
+index 6391dc76b..f6a676661 100644
+--- a/src/dbus/ei.rs
++++ b/src/dbus/ei.rs
+@@ -8,9 +8,10 @@ use zbus::names::{UniqueName, WellKnownName};
+ 
+ use super::name_owners::NameOwners;
+ 
+-static ALLOWED_NAMES: &[WellKnownName] = &[WellKnownName::from_static_str_unchecked(
+-    "org.freedesktop.impl.portal.desktop.cosmic",
+-)];
++static ALLOWED_NAMES: &[WellKnownName] = &[
++    WellKnownName::from_static_str_unchecked("org.freedesktop.impl.portal.desktop.cosmic"),
++    WellKnownName::from_static_str_unchecked("com.system76.CosmicRemoteDesktop"),
++];
+ 
+ /// Channel for handing the EI socketpair (and requested device types)
+ /// It's `None` until the EI sender side has been set up
+
+From 28f4f350f73d985e999b1374bd802591b2751b23 Mon Sep 17 00:00:00 2001
+From: Ian Douglas Scott <idscott@system76.com>
+Date: Fri, 19 Jun 2026 18:38:26 -0700
+Subject: [PATCH 17/22] libei: on KMS, schedule render after handling input
+ events
+
+Matches behavior of libinput backend.
+---
+ src/libei.rs | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/libei.rs b/src/libei.rs
+index dca7e8f14..ca78a56a0 100644
+--- a/src/libei.rs
++++ b/src/libei.rs
+@@ -11,7 +11,7 @@ use smithay::wayland::text_input::TextInputSeat;
+ 
+ use crate::config::xkb_config_to_wl;
+ use crate::input::InputBackendId;
+-use crate::state::State;
++use crate::state::{BackendData, State};
+ 
+ // Requested device types for an EI connection, mirroring the XDG RemoteDesktop portal `DeviceType` bitmask
+ const DEVICE_TYPE_KEYBOARD: u32 = 1;
+@@ -104,6 +104,11 @@ pub fn setup_ei(
+                                 let backend_id =
+                                     InputBackendId::Ei(connection.eis_connection().clone());
+                                 data.process_input_event(other, backend_id);
++                                if matches!(data.backend, BackendData::Kms(_)) {
++                                    for output in data.common.shell.read().outputs() {
++                                        data.backend.kms().schedule_render(output);
++                                    }
++                                }
+                             }
+                         }
+                     }
+
+From 070746e06606542e5237e8dbb507040a85d30cf7 Mon Sep 17 00:00:00 2001
+From: Ian Douglas Scott <idscott@system76.com>
+Date: Fri, 19 Jun 2026 18:38:58 -0700
+Subject: [PATCH 18/22] input: Handle scroll events that only have
+ `amount_v120`
+
+X11, winit, and libei backends all can produce scroll events with
+`amount_v120()` but no `amount()`.
+---
+ src/input/mod.rs | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/src/input/mod.rs b/src/input/mod.rs
+index 4e17af013..e344578df 100644
+--- a/src/input/mod.rs
++++ b/src/input/mod.rs
+@@ -1029,7 +1029,10 @@ impl State {
+                         }
+                     } else {
+                         let mut frame = AxisFrame::new(event.time_msec()).source(event.source());
+-                        if let Some(horizontal_amount) = event.amount(Axis::Horizontal) {
++                        let horizontal_amount = event
++                            .amount(Axis::Horizontal)
++                            .or_else(|| Some(event.amount_v120(Axis::Horizontal)? * 15.0 / 120.));
++                        if let Some(horizontal_amount) = horizontal_amount {
+                             if horizontal_amount != 0.0 {
+                                 frame = frame
+                                     .value(Axis::Horizontal, scroll_factor * horizontal_amount);
+@@ -1043,7 +1046,10 @@ impl State {
+                                 frame = frame.stop(Axis::Horizontal);
+                             }
+                         }
+-                        if let Some(vertical_amount) = event.amount(Axis::Vertical) {
++                        let vertical_amount = event
++                            .amount(Axis::Vertical)
++                            .or_else(|| Some(event.amount_v120(Axis::Vertical)? * 15.0 / 120.));
++                        if let Some(vertical_amount) = vertical_amount {
+                             if vertical_amount != 0.0 {
+                                 frame =
+                                     frame.value(Axis::Vertical, scroll_factor * vertical_amount);
+
+From 8eb014ec4261601440932cb00022b02fcdf13cbc Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Mon, 22 Jun 2026 10:02:48 -0600
+Subject: [PATCH 19/22] fix: clear per-source LastModifierChange on
+ input-source teardown
+
+---
+ src/input/mod.rs   |  1 +
+ src/shell/seats.rs | 12 ++++++++++++
+ 2 files changed, 13 insertions(+)
+
+diff --git a/src/input/mod.rs b/src/input/mod.rs
+index e344578df..fe4d56c39 100644
+--- a/src/input/mod.rs
++++ b/src/input/mod.rs
+@@ -1730,6 +1730,7 @@ impl State {
+             seat.supressed_keys().clear_source(backend_id);
+             seat.supressed_buttons().clear_source(backend_id);
+             seat.modifiers_shortcut_queue().clear(backend_id);
++            seat.clear_last_modifier_change(backend_id);
+         }
+     }
+ 
+diff --git a/src/shell/seats.rs b/src/shell/seats.rs
+index 1a668c71a..8813853b0 100644
+--- a/src/shell/seats.rs
++++ b/src/shell/seats.rs
+@@ -274,6 +274,7 @@ pub trait SeatExt {
+     fn last_modifier_change(&self) -> Option<Serial>;
+     fn last_modifier_change_for(&self, backend_id: &InputBackendId) -> Option<Serial>;
+     fn set_last_modifier_change(&self, backend_id: &InputBackendId, serial: Serial);
++    fn clear_last_modifier_change(&self, backend_id: &InputBackendId);
+     fn pointer_constraint_hint(&self) -> Option<(WlSurface, Point<f64, Logical>)>;
+     fn set_pointer_constraint_hint(&self, hint: Option<(WlSurface, Point<f64, Logical>)>);
+ 
+@@ -385,6 +386,17 @@ impl SeatExt for Seat<State> {
+         guard.1 = Some(serial);
+     }
+ 
++    fn clear_last_modifier_change(&self, backend_id: &InputBackendId) {
++        self.user_data()
++            .get::<LastModifierChange>()
++            .unwrap()
++            .0
++            .lock()
++            .unwrap()
++            .0
++            .remove(backend_id);
++    }
++
+     fn pointer_constraint_hint(&self) -> Option<(WlSurface, Point<f64, Logical>)> {
+         let lock = self.user_data().get::<PointerConstraintHint>().unwrap();
+         let mut hint = lock.0.lock().unwrap();
+
+From 31baa8f25c1d215a67dad399fe8a002cb1679105 Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Tue, 23 Jun 2026 21:08:52 -0600
+Subject: [PATCH 20/22] feat: act as input method for ei_text UTF-8 injection
+
+---
+ src/input/mod.rs |  32 ++++++++-------
+ src/libei.rs     | 104 +++++++++++++++++++++++++++++++++++++++--------
+ 2 files changed, 106 insertions(+), 30 deletions(-)
+
+diff --git a/src/input/mod.rs b/src/input/mod.rs
+index fe4d56c39..c275ccef2 100644
+--- a/src/input/mod.rs
++++ b/src/input/mod.rs
+@@ -1890,6 +1890,7 @@ impl State {
+         key_state: KeyState,
+         handle_shortcuts: bool,
+     ) {
++        use smithay::wayland::input_method::InputMethodSeat;
+         use smithay::wayland::text_input::TextInputSeat;
+ 
+         let keysym = Keysym::new(keysym);
+@@ -1906,22 +1907,25 @@ impl State {
+             && !c.is_control()
+         {
+             let seat = self.common.shell.read().seats.last_active().clone();
+-            let text_input = seat.text_input();
+-            let mut handled = false;
+-            text_input.with_active_text_input(|ti, _surface| {
+-                // A text-input client is focused: commit on press, no-op on release.
+-                if key_state == KeyState::Pressed {
+-                    ti.commit_string(Some(c.to_string()));
+-                }
+-                handled = true;
+-            });
+-            if handled {
+-                if key_state == KeyState::Pressed {
+-                    text_input.done(false);
++            // Only commit through text-input when we're the active input method (no real IME).
++            if !seat.input_method().has_instance() {
++                let text_input = seat.text_input();
++                let mut handled = false;
++                text_input.with_active_text_input(|ti, _surface| {
++                    // A text-input client is focused: commit on press, no-op on release.
++                    if key_state == KeyState::Pressed {
++                        ti.commit_string(Some(c.to_string()));
++                    }
++                    handled = true;
++                });
++                if handled {
++                    if key_state == KeyState::Pressed {
++                        text_input.done(false);
++                    }
++                    return;
+                 }
+-                return;
++                // No active text-input: fall through to keycode injection (press and release).
+             }
+-            // No active text-input: fall through to keycode injection (press and release).
+         }
+ 
+         // If the keysym exists in the active layout, inject its real keycode with the
+diff --git a/src/libei.rs b/src/libei.rs
+index ca78a56a0..a240313f2 100644
+--- a/src/libei.rs
++++ b/src/libei.rs
+@@ -7,6 +7,7 @@ use smithay::backend::input::KeyState;
+ use smithay::backend::libei::{EiInput, EiInputEvent};
+ use smithay::input::keyboard::Keysym;
+ use smithay::reexports::calloop;
++use smithay::wayland::input_method::InputMethodSeat;
+ use smithay::wayland::text_input::TextInputSeat;
+ 
+ use crate::config::xkb_config_to_wl;
+@@ -79,6 +80,7 @@ pub fn setup_ei(
+                                 data.common.ei_isolated_kbd.insert(conn.clone(), iso);
+                             }
+                             data.common.ei_seats.insert(conn, seat);
++                            data.update_ei_input_method();
+                         }
+                     }
+                     EiInputEvent::Disconnected => {
+@@ -88,6 +90,7 @@ pub fn setup_ei(
+                         data.clear_input_source_state(&backend_id);
+                         data.common.ei_seats.remove(&conn);
+                         data.common.ei_isolated_kbd.remove(&conn);
++                        data.update_ei_input_method();
+                     }
+                     EiInputEvent::Event(event) => {
+                         use smithay::backend::input::{InputEvent, KeyboardKeyEvent};
+@@ -134,27 +137,96 @@ pub fn setup_ei(
+ }
+ 
+ impl State {
++    /// Act as the input method for text injection while any text-capable EI connection is
++    /// active, so `ei_text` UTF-8 can be committed into the focused app even without a real
++    /// IME, but only when none is bound (a real IME always wins)
++    pub(crate) fn update_ei_input_method(&mut self) {
++        let active = !self.common.ei_seats.is_empty();
++        let seats = self
++            .common
++            .shell
++            .read()
++            .seats
++            .iter()
++            .cloned()
++            .collect::<Vec<_>>();
++        for seat in seats {
++            let has_ime = seat.input_method().has_instance();
++            let text_input = seat.text_input();
++            if active {
++                if !has_ime {
++                    text_input.set_compositor_input_method(true);
++                }
++            } else {
++                text_input.set_compositor_input_method(false);
++            }
++        }
++    }
++
+     /// Inject UTF-8 text (from an EI `ei_text` device) into the focused client.
+     pub fn inject_ei_text(&mut self, conn: &smithay::reexports::reis::eis::Connection, text: &str) {
+         let seat = self.common.shell.read().seats.last_active().clone();
+-        let text_input = seat.text_input();
+-        let mut injected = false;
+-        text_input.with_active_text_input(|ti, _surface| {
+-            ti.commit_string(Some(text.to_owned()));
+-            injected = true;
+-        });
+-        if injected {
+-            text_input.done(false);
+-            return;
++        // Only commit through text-input when we're the active input method (no real IME)
++        if !seat.input_method().has_instance() {
++            let text_input = seat.text_input();
++            let mut injected = false;
++            text_input.with_active_text_input(|ti, _surface| {
++                ti.commit_string(Some(text.to_owned()));
++                injected = true;
++            });
++            if injected {
++                text_input.done(false);
++                return;
++            }
+         }
+ 
+-        for c in text.chars() {
+-            let keysym = Keysym::from_char(c);
+-            if keysym.raw() != 0 {
+-                // Literal text: when  we fall back to keycodes must never trigger shortcuts
+-                self.inject_ei_text_keysym(conn, keysym.raw(), KeyState::Pressed, false);
+-                self.inject_ei_text_keysym(conn, keysym.raw(), KeyState::Released, false);
+-            }
++        // Bind the whole chunk to spare keycodes in one temporary keymap per batch, so we
++        // change (and broadcast) the keymap ~once per chunk instead of once per character
++        let keysyms: Vec<Keysym> = text
++            .chars()
++            .map(Keysym::from_char)
++            .filter(|keysym| keysym.raw() != 0)
++            .collect();
++        // At most ~247 keysyms fit one spare keymap (keycodes 9..=255); leave margin.
++        const BATCH: usize = 240;
++        for batch in keysyms.chunks(BATCH) {
++            self.inject_ei_text_batch(conn, batch);
++        }
++    }
++
++    /// Inject a batch of keysyms by binding them to consecutive spare keycodes in a single
++    /// temporary keymap (one keymap change for the whole batch), injecting each press+release,
++    /// then restoring the keymap. Never triggers shortcuts (literal text).
++    fn inject_ei_text_batch(
++        &mut self,
++        conn: &smithay::reexports::reis::eis::Connection,
++        keysyms: &[Keysym],
++    ) {
++        let seat = self.common.shell.read().seats.last_active().clone();
++        let backend_id = InputBackendId::Ei(conn.clone());
++        let Some(mut iso) = self.common.ei_isolated_kbd.remove(conn) else {
++            return;
++        };
++        let keycodes = iso.remap_keysyms_to_spare_keycodes(keysyms);
++        for keycode in keycodes.into_iter().flatten() {
++            self.inject_isolated_key(
++                &backend_id,
++                &seat,
++                &mut iso,
++                keycode,
++                KeyState::Pressed,
++                false,
++            );
++            self.inject_isolated_key(
++                &backend_id,
++                &seat,
++                &mut iso,
++                keycode,
++                KeyState::Released,
++                false,
++            );
+         }
++        iso.restore_keymap();
++        self.common.ei_isolated_kbd.insert(conn.clone(), iso);
+     }
+ }
+
+From 051505224f6d9445d27a473b85d73fd9888d754d Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Wed, 24 Jun 2026 13:32:44 -0600
+Subject: [PATCH 21/22] fix: create a region per output for abosolute pointer
+ position
+
+make sure to recreate the regions on display config update
+---
+ src/input/mod.rs                             | 59 +++++++++++++++++---
+ src/libei.rs                                 | 44 ++++++++++++++-
+ src/shell/seats.rs                           | 19 +++++--
+ src/wayland/handlers/output_configuration.rs | 10 ++++
+ 4 files changed, 117 insertions(+), 15 deletions(-)
+
+diff --git a/src/input/mod.rs b/src/input/mod.rs
+index c275ccef2..d60935c9b 100644
+--- a/src/input/mod.rs
++++ b/src/input/mod.rs
+@@ -697,14 +697,44 @@ impl State {
+                 if let Some(seat) = maybe_seat {
+                     self.common.idle_notifier_state.notify_activity(&seat);
+                     notify_cursor_activity(self, &seat);
+-                    let output = seat.active_output();
+-                    let output_geometry = output.geometry();
+-                    let position = output_geometry.loc.to_f64()
+-                        + smithay::backend::input::AbsolutePositionEvent::position_transformed(
+-                            &event,
+-                            output_geometry.size.as_logical(),
+-                        )
+-                        .as_global();
++                    let (output, output_geometry, position) =
++                        if matches!(&backend_id, InputBackendId::Ei(_)) {
++                            // EI absolute coordinates are in the compositor's *global*
++                            // logical space: each advertised region carries its output's
++                            // global offset, so the client sends a global position. Use
++                            // the coordinate directly and find the output it lands in,
++                            // rather than mapping relative to the focused output (which
++                            // cannot address other monitors). This is the KWin/mutter
++                            // model.
++                            let position =
++                            smithay::backend::input::AbsolutePositionEvent::position_transformed(
++                                &event,
++                                // smithay's EI impl ignores the size and returns the
++                                // raw coordinate.
++                                Size::from((0, 0)),
++                            )
++                            .as_global();
++                            let output = self
++                                .common
++                                .shell
++                                .read()
++                                .outputs()
++                                .find(|o| o.geometry().to_f64().contains(position))
++                                .cloned()
++                                .unwrap_or_else(|| seat.active_output());
++                            let output_geometry = output.geometry();
++                            (output, output_geometry, position)
++                        } else {
++                            let output = seat.active_output();
++                            let output_geometry = output.geometry();
++                            let position = output_geometry.loc.to_f64()
++                            + smithay::backend::input::AbsolutePositionEvent::position_transformed(
++                                &event,
++                                output_geometry.size.as_logical(),
++                            )
++                            .as_global();
++                            (output, output_geometry, position)
++                        };
+                     let serial = SERIAL_COUNTER.next_serial();
+                     let under = State::surface_under(position, &output, &self.common.shell.write())
+                         .map(|(target, pos)| (target, pos.as_logical()));
+@@ -721,7 +751,20 @@ impl State {
+                     );
+                     ptr.frame(self);
+ 
++                    // Keep the seat's active output following the pointer. Click-to-
++                    // focus (PointerButton) resolves its target via
++                    // `seat.active_output()`
++                    let previous_output = seat.active_output();
++                    if previous_output != output {
++                        seat.set_active_output(&output);
++                    }
++
+                     let shell = self.common.shell.read();
++                    if previous_output != output {
++                        for session in cursor_sessions_for_output(&shell, &previous_output) {
++                            session.set_cursor_pos(None);
++                        }
++                    }
+                     for session in cursor_sessions_for_output(&shell, &output) {
+                         if let Some((geometry, offset)) = seat.cursor_geometry(
+                             (position - output_geometry.loc.to_f64())
+diff --git a/src/libei.rs b/src/libei.rs
+index a240313f2..c5f9f2f97 100644
+--- a/src/libei.rs
++++ b/src/libei.rs
+@@ -4,7 +4,7 @@ use reis::eis;
+ use smithay::reexports::reis;
+ 
+ use smithay::backend::input::KeyState;
+-use smithay::backend::libei::{EiInput, EiInputEvent};
++use smithay::backend::libei::{EiInput, EiInputEvent, EiRegion};
+ use smithay::input::keyboard::Keysym;
+ use smithay::reexports::calloop;
+ use smithay::wayland::input_method::InputMethodSeat;
+@@ -13,14 +13,53 @@ use smithay::wayland::text_input::TextInputSeat;
+ use crate::config::xkb_config_to_wl;
+ use crate::input::InputBackendId;
+ use crate::state::{BackendData, State};
++use crate::utils::prelude::OutputExt;
+ 
+ // Requested device types for an EI connection, mirroring the XDG RemoteDesktop portal `DeviceType` bitmask
+ const DEVICE_TYPE_KEYBOARD: u32 = 1;
+ const DEVICE_TYPE_POINTER: u32 = 2;
+ const DEVICE_TYPE_TOUCHSCREEN: u32 = 4;
+ 
++// Name of the EI absolute-pointer device. Shared so the connect path and the
++// re-advertise-on-output-change path recreate the same device.
++const ABSOLUTE_POINTER_NAME: &str = "virtual absolute pointer";
++
+ pub type EiRequest = (UnixStream, u32);
+ 
++/// Build the regions advertised on the EI absolute-pointer device for the current
++/// output layout: one region per output, each at its **global logical** offset with
++/// its logical size and scale.
++pub fn absolute_pointer_regions(state: &State) -> Vec<EiRegion> {
++    let shell = state.common.shell.read();
++    shell
++        .outputs()
++        .map(|output| {
++            let geo = output.geometry();
++            let scale = output.current_scale().fractional_scale();
++            EiRegion {
++                // EI region offsets are unsigned; cosmic-comp normalizes output
++                // layout to non-negative coordinates.
++                x: geo.loc.x.max(0) as u32,
++                y: geo.loc.y.max(0) as u32,
++                width: geo.size.w.max(0) as u32,
++                height: geo.size.h.max(0) as u32,
++                scale: scale as f32,
++            }
++        })
++        .collect()
++}
++
++/// Re-advertise the absolute-pointer region on every active EI seat.
++pub fn refresh_absolute_pointer_regions(state: &State) {
++    if state.common.ei_seats.is_empty() {
++        return;
++    }
++    let regions = absolute_pointer_regions(state);
++    for seat in state.common.ei_seats.values() {
++        seat.add_pointer_absolute(ABSOLUTE_POINTER_NAME, &regions);
++    }
++}
++
+ pub fn setup_ei(
+     handle: &calloop::LoopHandle<'static, State>,
+ ) -> calloop::channel::Sender<EiRequest> {
+@@ -68,7 +107,8 @@ pub fn setup_ei(
+                         };
+                         if device_types & DEVICE_TYPE_POINTER != 0 {
+                             seat.add_pointer("virtual pointer");
+-                            seat.add_pointer_absolute("virtual absolute pointer");
++                            let regions = absolute_pointer_regions(data);
++                            seat.add_pointer_absolute(ABSOLUTE_POINTER_NAME, &regions);
+                         }
+                         if device_types & DEVICE_TYPE_TOUCHSCREEN != 0 {
+                             seat.add_touch("virtual touch");
+diff --git a/src/shell/seats.rs b/src/shell/seats.rs
+index 8813853b0..fe5e93863 100644
+--- a/src/shell/seats.rs
++++ b/src/shell/seats.rs
+@@ -87,11 +87,20 @@ impl Seats {
+         device: &D,
+         backend_id: &InputBackendId,
+     ) -> Option<&Seat<State>> {
+-        self.iter().find(|seat| {
+-            let userdata = seat.user_data();
+-            let devices = userdata.get::<Devices>().unwrap();
+-            devices.has_device(device, backend_id)
+-        })
++        self.iter()
++            .find(|seat| {
++                let userdata = seat.user_data();
++                let devices = userdata.get::<Devices>().unwrap();
++                devices.has_device(device, backend_id)
++            })
++            .or_else(|| {
++                // EI devices can be transiently unregistered while the compositor recreates
++                // the absolute-pointer device (e.g. on a scale/geometry change), which would
++                // otherwise drop all pointer/touch input until the client re-binds it. EI is
++                // single-seat, so fall back to the active seat here, matching the EI keyboard
++                // path, which always targets the active seat.
++                matches!(backend_id, InputBackendId::Ei(_)).then(|| self.last_active())
++            })
+     }
+ }
+ 
+diff --git a/src/wayland/handlers/output_configuration.rs b/src/wayland/handlers/output_configuration.rs
+index 6ab678f5b..4f7000fda 100644
+--- a/src/wayland/handlers/output_configuration.rs
++++ b/src/wayland/handlers/output_configuration.rs
+@@ -230,6 +230,16 @@ impl State {
+             state.common.output_configuration_state.update();
+         });
+ 
++        // Output scale or geometry may have changed. EI absolute-pointer regions
++        // are immutable per device, so any connected EI client (e.g. an RDP server)
++        // keeps mapping with the old scale until it reconnects. Recreate the
++        // device with the updated region so the mapping tracks the change live.
++        // (drop the backend lock first: refresh borrows `self` immutably.)
++        drop(backend);
++        if !test_only {
++            crate::libei::refresh_absolute_pointer_regions(self);
++        }
++
+         true
+     }
+ }
+
+From 2178f7b24ab576e647cf5a7ed0c5277e11415f7f Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Wed, 24 Jun 2026 18:11:39 -0600
+Subject: [PATCH 22/22] DROP ME: update smithay
+
+---
+ Cargo.lock | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Cargo.lock b/Cargo.lock
+index 647209253..12a6ef8ac 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -4797,7 +4797,7 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+ [[package]]
+ name = "smithay"
+ version = "0.7.0"
+-source = "git+https://github.com/hojjatabdollahi/smithay?branch=hojjat%2Fei_text#3040324b73a4951bd1643ed862891dbe692f73f4"
++source = "git+https://github.com/hojjatabdollahi/smithay?branch=hojjat%2Fei_text#a7496093fca41f92fc21d4e5bb469b07296d5b7b"
+ dependencies = [
+  "aliasable",
+  "appendlist",
