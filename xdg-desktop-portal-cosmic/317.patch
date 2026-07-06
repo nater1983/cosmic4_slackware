@@ -1,0 +1,3647 @@
+From f4336a1dd5e299e66d153c1588c8d129144e5902 Mon Sep 17 00:00:00 2001
+From: Ian Douglas Scott <idscott@system76.com>
+Date: Wed, 11 Sep 2024 18:33:03 -0700
+Subject: [PATCH 01/11] WIP Remote Desktop Portal
+
+---
+ data/cosmic.portal    |   2 +-
+ src/main.rs           |   1 +
+ src/remote_desktop.rs | 115 ++++++++++++++++++++++++++++++++++++++++++
+ src/subscription.rs   |   3 +-
+ 4 files changed, 119 insertions(+), 2 deletions(-)
+ create mode 100644 src/remote_desktop.rs
+
+diff --git a/data/cosmic.portal b/data/cosmic.portal
+index 01bdd79a..123564c4 100644
+--- a/data/cosmic.portal
++++ b/data/cosmic.portal
+@@ -1,4 +1,4 @@
+ [portal]
+ DBusName=org.freedesktop.impl.portal.desktop.cosmic
+-Interfaces=org.freedesktop.impl.portal.Access;org.freedesktop.impl.portal.FileChooser;org.freedesktop.impl.portal.Screenshot;org.freedesktop.impl.portal.Settings;org.freedesktop.impl.portal.ScreenCast
++Interfaces=org.freedesktop.impl.portal.Access;org.freedesktop.impl.portal.FileChooser;org.freedesktop.impl.portal.RemoteDesktop;org.freedesktop.impl.portal.Screenshot;org.freedesktop.impl.portal.Settings;org.freedesktop.impl.portal.ScreenCast
+ UseIn=COSMIC
+diff --git a/src/main.rs b/src/main.rs
+index ba26688b..8764fd6e 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -13,6 +13,7 @@ mod buffer;
+ mod documents;
+ mod file_chooser;
+ mod localize;
++mod remote_desktop;
+ mod screencast;
+ mod screencast_dialog;
+ mod screencast_thread;
+diff --git a/src/remote_desktop.rs b/src/remote_desktop.rs
+new file mode 100644
+index 00000000..7474b643
+--- /dev/null
++++ b/src/remote_desktop.rs
+@@ -0,0 +1,115 @@
++use crate::{PortalResponse, Session};
++use std::{
++    collections::HashMap,
++    env,
++    os::{fd::OwnedFd, unix::net::UnixStream},
++};
++use zbus::zvariant;
++
++#[derive(zvariant::SerializeDict, zvariant::Type)]
++#[zvariant(signature = "a{sv}")]
++struct CreateSessionResult {
++    session_id: String,
++}
++
++#[derive(zvariant::DeserializeDict, zvariant::Type)]
++#[zvariant(signature = "a{sv}")]
++struct SelectDevicesOptions {
++    // Default: all
++    types: Option<u32>,
++    restore_data: Option<(String, u32, zvariant::OwnedValue)>,
++    // Default: 0
++    persist_mode: Option<u32>,
++}
++
++#[derive(zvariant::SerializeDict, zvariant::Type)]
++#[zvariant(signature = "a{sv}")]
++struct StartResult {
++    devices: u32,
++    clipboard_enabled: bool,
++    streams: Vec<(u32, HashMap<String, zvariant::OwnedValue>)>,
++}
++
++struct SessionData {}
++
++pub struct RemoteDesktop;
++
++#[zbus::interface(name = "org.freedesktop.impl.portal.RemoteDesktop")]
++impl RemoteDesktop {
++    async fn create_session(
++        &self,
++        #[zbus(connection)] connection: &zbus::Connection,
++        handle: zvariant::ObjectPath<'_>,
++        session_handle: zvariant::ObjectPath<'_>,
++        app_id: String,
++        options: HashMap<String, zvariant::OwnedValue>,
++    ) -> PortalResponse<CreateSessionResult> {
++        connection
++            .object_server()
++            .at(&session_handle, Session::new(SessionData {}, |_| {}))
++            .await
++            .unwrap(); // XXX unwrap
++        PortalResponse::Success(CreateSessionResult {
++            session_id: "foo".to_string(), // XXX
++        })
++    }
++
++    // CreateSession
++    async fn select_devices(
++        &self,
++        #[zbus(connection)] connection: &zbus::Connection,
++        handle: zvariant::ObjectPath<'_>,
++        session_handle: zvariant::ObjectPath<'_>,
++        app_id: String,
++        options: SelectDevicesOptions, // XXX
++    ) -> PortalResponse<HashMap<String, zvariant::OwnedValue>> {
++        PortalResponse::Success(HashMap::new())
++    }
++
++    async fn start(
++        &self,
++        #[zbus(connection)] connection: &zbus::Connection,
++        handle: zvariant::ObjectPath<'_>,
++        session_handle: zvariant::ObjectPath<'_>,
++        app_id: String,
++        parent_window: String,
++        options: HashMap<String, zvariant::OwnedValue>,
++    ) -> PortalResponse<StartResult> {
++        PortalResponse::Success(StartResult {
++            devices: 7,
++            clipboard_enabled: false,
++            streams: Vec::new(),
++        })
++    }
++
++    async fn connect_to_EIS(
++        &self,
++        #[zbus(connection)] connection: &zbus::Connection,
++        session_handle: zvariant::ObjectPath<'_>,
++        app_id: String,
++        options: HashMap<String, zvariant::OwnedValue>,
++    ) -> zvariant::Fd<'_> {
++        println!("Connect");
++        // TODO Dedicated mechanism to get fd, for specific "devices"
++        if let Ok(path) = env::var("LIBEI_SOCKET") {
++            if let Ok(socket) = UnixStream::connect(path) {
++                return OwnedFd::from(socket).into();
++            }
++        }
++
++        todo!()
++        //PortalResponse::Other
++    }
++
++    // TODO: Notify*
++
++    #[zbus(property)]
++    async fn available_device_types(&self) -> u32 {
++        7 // XXX
++    }
++
++    #[zbus(property, name = "version")]
++    async fn version(&self) -> u32 {
++        2
++    }
++}
+diff --git a/src/subscription.rs b/src/subscription.rs
+index 101cf86c..137bc8f2 100644
+--- a/src/subscription.rs
++++ b/src/subscription.rs
+@@ -15,7 +15,7 @@ use crate::screencast::ScreenCast;
+ use crate::screenshot::Screenshot;
+ use crate::{
+     ACCENT_COLOR_KEY, APPEARANCE_NAMESPACE, COLOR_SCHEME_KEY, CONTRAST_KEY, ColorScheme, Contrast,
+-    DBUS_NAME, DBUS_PATH, Settings, config, wayland,
++    DBUS_NAME, DBUS_PATH, Settings, config, remote_desktop::RemoteDesktop, wayland,
+ };
+ 
+ #[derive(Clone, Debug)]
+@@ -90,6 +90,7 @@ pub(crate) async fn process_changes(
+             let connection = zbus::connection::Builder::session()?
+                 .serve_at(DBUS_PATH, Access::new(wayland_helper.clone(), tx.clone()))?
+                 .serve_at(DBUS_PATH, FileChooser::new(tx.clone()))?
++                .serve_at(DBUS_PATH, RemoteDesktop)?
+                 .serve_at(
+                     DBUS_PATH,
+                     Screenshot::new(wayland_helper.clone(), tx.clone()),
+
+From f8f164eff1fd27d33a7f63a809ad8e0dfc518242 Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Fri, 5 Jun 2026 11:44:53 -0600
+Subject: [PATCH 02/11] chore: use cosmic-comp's ei dbus interface
+
+---
+ src/remote_desktop.rs | 23 +++++++++++------------
+ 1 file changed, 11 insertions(+), 12 deletions(-)
+
+diff --git a/src/remote_desktop.rs b/src/remote_desktop.rs
+index 7474b643..0fc6c501 100644
+--- a/src/remote_desktop.rs
++++ b/src/remote_desktop.rs
+@@ -1,7 +1,6 @@
+ use crate::{PortalResponse, Session};
+ use std::{
+     collections::HashMap,
+-    env,
+     os::{fd::OwnedFd, unix::net::UnixStream},
+ };
+ use zbus::zvariant;
+@@ -88,17 +87,17 @@ impl RemoteDesktop {
+         session_handle: zvariant::ObjectPath<'_>,
+         app_id: String,
+         options: HashMap<String, zvariant::OwnedValue>,
+-    ) -> zvariant::Fd<'_> {
+-        println!("Connect");
+-        // TODO Dedicated mechanism to get fd, for specific "devices"
+-        if let Ok(path) = env::var("LIBEI_SOCKET") {
+-            if let Ok(socket) = UnixStream::connect(path) {
+-                return OwnedFd::from(socket).into();
+-            }
+-        }
+-
+-        todo!()
+-        //PortalResponse::Other
++    ) -> zbus::fdo::Result<zvariant::OwnedFd> {
++        let proxy = zbus::proxy::Builder::<'_, zbus::proxy::Proxy<'_>>::new(connection)
++            .destination("com.system76.CosmicComp")?
++            .path("/com/system76/CosmicComp/Ei")?
++            .interface("com.system76.CosmicComp.Ei")?
++            .build()
++            .await?;
++        let path: String = proxy.call("GetSocketPath", &()).await?;
++        let socket = UnixStream::connect(&path)
++            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to connect to EIS: {e}")))?;
++        Ok(OwnedFd::from(socket).into())
+     }
+ 
+     // TODO: Notify*
+
+From 541b3059ab579a02e916f36c07ab5a43dd343703 Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Tue, 16 Jun 2026 12:17:52 -0600
+Subject: [PATCH 03/11] improv: use `zbus::proxy` macro
+
+---
+ src/remote_desktop.rs | 18 +++++++++++-------
+ 1 file changed, 11 insertions(+), 7 deletions(-)
+
+diff --git a/src/remote_desktop.rs b/src/remote_desktop.rs
+index 0fc6c501..be27c2a4 100644
+--- a/src/remote_desktop.rs
++++ b/src/remote_desktop.rs
+@@ -31,6 +31,15 @@ struct StartResult {
+ 
+ struct SessionData {}
+ 
++#[zbus::proxy(
++    interface = "com.system76.CosmicComp.Ei",
++    default_service = "com.system76.CosmicComp",
++    default_path = "/com/system76/CosmicComp/Ei"
++)]
++trait CosmicCompEi {
++    fn get_socket_path(&self) -> zbus::Result<String>;
++}
++
+ pub struct RemoteDesktop;
+ 
+ #[zbus::interface(name = "org.freedesktop.impl.portal.RemoteDesktop")]
+@@ -88,13 +97,8 @@ impl RemoteDesktop {
+         app_id: String,
+         options: HashMap<String, zvariant::OwnedValue>,
+     ) -> zbus::fdo::Result<zvariant::OwnedFd> {
+-        let proxy = zbus::proxy::Builder::<'_, zbus::proxy::Proxy<'_>>::new(connection)
+-            .destination("com.system76.CosmicComp")?
+-            .path("/com/system76/CosmicComp/Ei")?
+-            .interface("com.system76.CosmicComp.Ei")?
+-            .build()
+-            .await?;
+-        let path: String = proxy.call("GetSocketPath", &()).await?;
++        let proxy = CosmicCompEiProxy::new(connection).await?;
++        let path = proxy.get_socket_path().await?;
+         let socket = UnixStream::connect(&path)
+             .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to connect to EIS: {e}")))?;
+         Ok(OwnedFd::from(socket).into())
+
+From 597f421041781bbbe632eb6c4bd4f7ab59c8a3b7 Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Tue, 16 Jun 2026 15:01:43 -0600
+Subject: [PATCH 04/11] fix: cosmic-comp returns an end of a socketpair now
+
+---
+ src/remote_desktop.rs | 15 ++++++---------
+ 1 file changed, 6 insertions(+), 9 deletions(-)
+
+diff --git a/src/remote_desktop.rs b/src/remote_desktop.rs
+index be27c2a4..02023fbb 100644
+--- a/src/remote_desktop.rs
++++ b/src/remote_desktop.rs
+@@ -1,8 +1,5 @@
+ use crate::{PortalResponse, Session};
+-use std::{
+-    collections::HashMap,
+-    os::{fd::OwnedFd, unix::net::UnixStream},
+-};
++use std::collections::HashMap;
+ use zbus::zvariant;
+ 
+ #[derive(zvariant::SerializeDict, zvariant::Type)]
+@@ -37,7 +34,7 @@ struct SessionData {}
+     default_path = "/com/system76/CosmicComp/Ei"
+ )]
+ trait CosmicCompEi {
+-    fn get_socket_path(&self) -> zbus::Result<String>;
++    fn get_sender_socket(&self) -> zbus::Result<zvariant::OwnedFd>;
+ }
+ 
+ pub struct RemoteDesktop;
+@@ -98,10 +95,10 @@ impl RemoteDesktop {
+         options: HashMap<String, zvariant::OwnedValue>,
+     ) -> zbus::fdo::Result<zvariant::OwnedFd> {
+         let proxy = CosmicCompEiProxy::new(connection).await?;
+-        let path = proxy.get_socket_path().await?;
+-        let socket = UnixStream::connect(&path)
+-            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to connect to EIS: {e}")))?;
+-        Ok(OwnedFd::from(socket).into())
++        proxy
++            .get_sender_socket()
++            .await
++            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to connect to EIS: {e}")))
+     }
+ 
+     // TODO: Notify*
+
+From bdca345f841d671283c7f59d27e9b9d5bccf3181 Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Tue, 16 Jun 2026 22:28:41 -0600
+Subject: [PATCH 05/11] share SessionData with screencast, extract capture
+ helper
+
+---
+ src/remote_desktop.rs | 130 +++++++++++++++--
+ src/screencast.rs     | 332 ++++++++++++++++++++++++------------------
+ src/subscription.rs   |   5 +-
+ 3 files changed, 308 insertions(+), 159 deletions(-)
+
+diff --git a/src/remote_desktop.rs b/src/remote_desktop.rs
+index 02023fbb..7eaf04b8 100644
+--- a/src/remote_desktop.rs
++++ b/src/remote_desktop.rs
+@@ -1,7 +1,28 @@
+-use crate::{PortalResponse, Session};
++use crate::screencast::{self, CaptureOutcome, SessionData, StreamProps};
++use crate::wayland::WaylandHelper;
++use crate::{PortalResponse, Request, Session, screencast_dialog, subscription};
+ use std::collections::HashMap;
++use tokio::sync::mpsc::Sender;
+ use zbus::zvariant;
+ 
++const ALL_DEVICE_TYPES: u32 = 1 | 2 | 4;
++
++pub(crate) struct RemoteDesktopData {
++    pub(crate) device_types: u32,
++    pub(crate) clipboard_enabled: bool,
++    pub(crate) screen_cast_enabled: bool,
++}
++
++impl Default for RemoteDesktopData {
++    fn default() -> Self {
++        Self {
++            device_types: ALL_DEVICE_TYPES,
++            clipboard_enabled: false,
++            screen_cast_enabled: false,
++        }
++    }
++}
++
+ #[derive(zvariant::SerializeDict, zvariant::Type)]
+ #[zvariant(signature = "a{sv}")]
+ struct CreateSessionResult {
+@@ -23,21 +44,28 @@ struct SelectDevicesOptions {
+ struct StartResult {
+     devices: u32,
+     clipboard_enabled: bool,
+-    streams: Vec<(u32, HashMap<String, zvariant::OwnedValue>)>,
++    streams: Vec<(u32, StreamProps)>,
+ }
+ 
+-struct SessionData {}
+-
+ #[zbus::proxy(
+     interface = "com.system76.CosmicComp.Ei",
+     default_service = "com.system76.CosmicComp",
+     default_path = "/com/system76/CosmicComp/Ei"
+ )]
+ trait CosmicCompEi {
+-    fn get_sender_socket(&self) -> zbus::Result<zvariant::OwnedFd>;
++    fn get_sender_socket(&self, device_types: u32) -> zbus::Result<zvariant::OwnedFd>;
+ }
+ 
+-pub struct RemoteDesktop;
++pub struct RemoteDesktop {
++    wayland_helper: WaylandHelper,
++    tx: Sender<subscription::Event>,
++}
++
++impl RemoteDesktop {
++    pub fn new(wayland_helper: WaylandHelper, tx: Sender<subscription::Event>) -> Self {
++        Self { wayland_helper, tx }
++    }
++}
+ 
+ #[zbus::interface(name = "org.freedesktop.impl.portal.RemoteDesktop")]
+ impl RemoteDesktop {
+@@ -51,7 +79,12 @@ impl RemoteDesktop {
+     ) -> PortalResponse<CreateSessionResult> {
+         connection
+             .object_server()
+-            .at(&session_handle, Session::new(SessionData {}, |_| {}))
++            .at(
++                &session_handle,
++                Session::new(SessionData::new_remote_desktop(), |session_data| {
++                    session_data.close()
++                }),
++            )
+             .await
+             .unwrap(); // XXX unwrap
+         PortalResponse::Success(CreateSessionResult {
+@@ -59,15 +92,25 @@ impl RemoteDesktop {
+         })
+     }
+ 
+-    // CreateSession
+     async fn select_devices(
+         &self,
+         #[zbus(connection)] connection: &zbus::Connection,
+         handle: zvariant::ObjectPath<'_>,
+         session_handle: zvariant::ObjectPath<'_>,
+         app_id: String,
+-        options: SelectDevicesOptions, // XXX
++        options: SelectDevicesOptions,
+     ) -> PortalResponse<HashMap<String, zvariant::OwnedValue>> {
++        let Some(interface) =
++            crate::session_interface::<SessionData>(connection, &session_handle).await
++        else {
++            return PortalResponse::Other;
++        };
++        let mut session_data = interface.get_mut().await;
++        let Some(remote_desktop) = session_data.remote_desktop.as_mut() else {
++            return PortalResponse::Other;
++        };
++        remote_desktop.device_types = options.types.unwrap_or(ALL_DEVICE_TYPES) & ALL_DEVICE_TYPES;
++        // TODO: persist_mode / restore_data
+         PortalResponse::Success(HashMap::new())
+     }
+ 
+@@ -80,11 +123,52 @@ impl RemoteDesktop {
+         parent_window: String,
+         options: HashMap<String, zvariant::OwnedValue>,
+     ) -> PortalResponse<StartResult> {
+-        PortalResponse::Success(StartResult {
+-            devices: 7,
+-            clipboard_enabled: false,
+-            streams: Vec::new(),
++        let on_cancel = || screencast_dialog::hide_screencast_prompt(&self.tx, &session_handle);
++        Request::run(connection, &handle, on_cancel, async {
++            let (device_types, clipboard_enabled, screen_cast_enabled) = {
++                let Some(interface) =
++                    crate::session_interface::<SessionData>(connection, &session_handle).await
++                else {
++                    return PortalResponse::Other;
++                };
++                let session_data = interface.get().await;
++                let Some(remote_desktop) = session_data.remote_desktop.as_ref() else {
++                    return PortalResponse::Other;
++                };
++                // Without a prompt yet, the granted devices are whatever was selected.
++                (
++                    remote_desktop.device_types,
++                    remote_desktop.clipboard_enabled,
++                    remote_desktop.screen_cast_enabled,
++                )
++            };
++
++            // Reuse the ScreenCast.Start capture path; streams are returned here.
++            let streams = if screen_cast_enabled {
++                match screencast::capture(
++                    connection,
++                    &self.wayland_helper,
++                    &self.tx,
++                    &session_handle,
++                    app_id,
++                )
++                .await
++                {
++                    CaptureOutcome::Success(result) => result.streams,
++                    CaptureOutcome::Cancelled => return PortalResponse::Cancelled,
++                    CaptureOutcome::Other => return PortalResponse::Other,
++                }
++            } else {
++                Vec::new()
++            };
++
++            PortalResponse::Success(StartResult {
++                devices: device_types,
++                clipboard_enabled,
++                streams,
++            })
+         })
++        .await
+     }
+ 
+     async fn connect_to_EIS(
+@@ -94,9 +178,25 @@ impl RemoteDesktop {
+         app_id: String,
+         options: HashMap<String, zvariant::OwnedValue>,
+     ) -> zbus::fdo::Result<zvariant::OwnedFd> {
++        let Some(interface) =
++            crate::session_interface::<SessionData>(connection, &session_handle).await
++        else {
++            return Err(zbus::fdo::Error::Failed("No such session".to_string()));
++        };
++        let Some(device_types) = interface
++            .get()
++            .await
++            .remote_desktop
++            .as_ref()
++            .map(|remote_desktop| remote_desktop.device_types)
++        else {
++            return Err(zbus::fdo::Error::Failed(
++                "Not a remote desktop session".to_string(),
++            ));
++        };
+         let proxy = CosmicCompEiProxy::new(connection).await?;
+         proxy
+-            .get_sender_socket()
++            .get_sender_socket(device_types)
+             .await
+             .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to connect to EIS: {e}")))
+     }
+@@ -105,7 +205,7 @@ impl RemoteDesktop {
+ 
+     #[zbus(property)]
+     async fn available_device_types(&self) -> u32 {
+-        7 // XXX
++        ALL_DEVICE_TYPES
+     }
+ 
+     #[zbus(property, name = "version")]
+diff --git a/src/screencast.rs b/src/screencast.rs
+index 0aa86075..f27b6750 100644
+--- a/src/screencast.rs
++++ b/src/screencast.rs
+@@ -8,6 +8,7 @@ use std::mem;
+ use tokio::sync::mpsc::Sender;
+ use zbus::zvariant;
+ 
++use crate::remote_desktop::RemoteDesktopData;
+ use crate::screencast_dialog::{self, CaptureSources};
+ use crate::screencast_thread::ScreencastThread;
+ use crate::wayland::{CaptureSource, WaylandHelper};
+@@ -77,7 +78,7 @@ impl PersistedCaptureSources {
+ 
+ #[derive(Debug, serde::Serialize, serde::Deserialize, zvariant::Type)]
+ #[zvariant(signature = "(suv)")]
+-struct RestoreData {
++pub(crate) struct RestoreData {
+     vendor: String,
+     version: u32,
+     data: zvariant::OwnedValue,
+@@ -144,17 +145,25 @@ struct StartResult {
+ }
+ 
+ #[derive(Default)]
+-struct SessionData {
++pub(crate) struct SessionData {
+     screencast_threads: Vec<ScreencastThread>,
+     cursor_mode: Option<u32>,
+     multiple: bool,
+     source_types: BitFlags<SourceType>,
+     persisted_capture_sources: Option<PersistedCaptureSources>,
+     closed: bool,
++    pub(crate) remote_desktop: Option<RemoteDesktopData>,
+ }
+ 
+ impl SessionData {
+-    fn close(&mut self) {
++    pub(crate) fn new_remote_desktop() -> Self {
++        Self {
++            remote_desktop: Some(RemoteDesktopData::default()),
++            ..Default::default()
++        }
++    }
++
++    pub(crate) fn close(&mut self) {
+         for thread in mem::take(&mut self.screencast_threads) {
+             thread.stop();
+         }
+@@ -162,6 +171,164 @@ impl SessionData {
+     }
+ }
+ 
++pub(crate) struct CaptureResult {
++    pub(crate) streams: Vec<(u32, StreamProps)>,
++    pub(crate) restore_data: Option<RestoreData>,
++}
++
++pub(crate) enum CaptureOutcome {
++    Success(CaptureResult),
++    Cancelled,
++    Other,
++}
++
++pub(crate) async fn capture(
++    connection: &zbus::Connection,
++    wayland_helper: &WaylandHelper,
++    tx: &Sender<subscription::Event>,
++    session_handle: &zvariant::ObjectPath<'_>,
++    app_id: String,
++) -> CaptureOutcome {
++    let Some(interface) = crate::session_interface::<SessionData>(connection, session_handle).await
++    else {
++        return CaptureOutcome::Other;
++    };
++
++    let (cursor_mode, multiple, source_types, persisted_capture_sources) = {
++        let session_data = interface.get_mut().await;
++        let cursor_mode = session_data.cursor_mode.unwrap_or(CURSOR_MODE_EMBEDDED);
++        let multiple = session_data.multiple;
++        let source_types = session_data.source_types;
++        let persisted_capture_sources = session_data.persisted_capture_sources.clone();
++        (
++            cursor_mode,
++            multiple,
++            source_types,
++            persisted_capture_sources,
++        )
++    };
++
++    // XXX
++    let outputs = wayland_helper.outputs();
++    if outputs.is_empty() {
++        log::error!("No output");
++        return CaptureOutcome::Other;
++    }
++
++    let capture_sources = if let Some(capture_sources) =
++        persisted_capture_sources.and_then(|x| x.to_capture_sources(wayland_helper))
++    {
++        capture_sources
++    } else {
++        // Show dialog to prompt for what to capture
++        let resp = screencast_dialog::show_screencast_prompt(
++            tx,
++            session_handle,
++            app_id,
++            multiple,
++            source_types,
++            wayland_helper,
++        )
++        .await;
++        let Some(capture_sources) = resp else {
++            return CaptureOutcome::Cancelled;
++        };
++        capture_sources
++    };
++
++    let overlay_cursor = cursor_mode == CURSOR_MODE_EMBEDDED;
++    // Use `FuturesOrdered` so streams are in consistent order
++    let mut res_futures = FuturesOrdered::new();
++    for output in &capture_sources.outputs {
++        let info = wayland_helper.output_info(output);
++        let (position, size) = if let Some(info) = info {
++            (info.logical_position, info.logical_size.unwrap_or((0, 0)))
++        } else {
++            (Some((0, 0)), (0, 0))
++        };
++        res_futures.push_back(ScreencastThread::new(
++            wayland_helper.clone(),
++            CaptureSource::Output(output.clone()),
++            overlay_cursor,
++            StreamProps {
++                position,
++                size,
++                source_type: SOURCE_TYPE_MONITOR,
++                mapping_id: None,
++            },
++        ));
++    }
++    let toplevel_infos = wayland_helper.toplevels();
++    for foreign_toplevel in &capture_sources.toplevels {
++        let info = toplevel_infos
++            .iter()
++            .find(|info| info.foreign_toplevel == *foreign_toplevel);
++        let size = if let Some(info) = info {
++            // Use size on output with greatest area
++            // XXX: No way to get size of whole toplevel?
++            info.geometry
++                .values()
++                .max_by_key(|info| info.width * info.height)
++                .map_or((0, 0), |info| (info.width, info.height))
++        } else {
++            (0, 0)
++        };
++        res_futures.push_back(ScreencastThread::new(
++            wayland_helper.clone(),
++            CaptureSource::Toplevel(foreign_toplevel.clone()),
++            overlay_cursor,
++            StreamProps {
++                position: None,
++                size,
++                source_type: SOURCE_TYPE_WINDOW,
++                mapping_id: None,
++            },
++        ));
++    }
++
++    let mut failed = false;
++    let mut screencast_threads = Vec::new();
++    while let Some(res) = res_futures.next().await {
++        match res {
++            Ok(thread) => screencast_threads.push(thread),
++            Err(err) => {
++                log::error!("Screencast thread failed: {}", err);
++                failed = true;
++            }
++        }
++    }
++
++    // Stop any thread that didn't fail
++    if failed {
++        for thread in screencast_threads {
++            thread.stop();
++        }
++        return CaptureOutcome::Other;
++    }
++
++    // Session may have already been cancelled
++    if interface.get().await.closed {
++        for thread in screencast_threads {
++            thread.stop();
++        }
++        return CaptureOutcome::Cancelled;
++    }
++
++    let streams = screencast_threads
++        .iter()
++        .map(|thread| (thread.node_id(), thread.stream_props()))
++        .collect();
++    interface.get_mut().await.screencast_threads = screencast_threads;
++
++    let persisted_capture_sources =
++        PersistedCaptureSources::from_capture_sources(wayland_helper, &capture_sources);
++
++    CaptureOutcome::Success(CaptureResult {
++        streams,
++        restore_data: persisted_capture_sources.map(|x| x.into()),
++    })
++}
++
+ pub struct ScreenCast {
+     wayland_helper: WaylandHelper,
+     tx: Sender<subscription::Event>,
+@@ -224,6 +391,10 @@ impl ScreenCast {
+                         log::warn!("unrecognized screencopy restore data: {:?}", restore_data);
+                     }
+                 }
++                // RemoteDesktop sessions capture in RemoteDesktop.Start, not here.
++                if let Some(remote_desktop) = session_data.remote_desktop.as_mut() {
++                    remote_desktop.screen_cast_enabled = true;
++                }
+                 PortalResponse::Success(HashMap::new())
+             }
+             None => PortalResponse::Other,
+@@ -241,148 +412,23 @@ impl ScreenCast {
+     ) -> PortalResponse<StartResult> {
+         let on_cancel = || screencast_dialog::hide_screencast_prompt(&self.tx, &session_handle);
+         Request::run(connection, &handle, on_cancel, async {
+-            let Some(interface) =
+-                crate::session_interface::<SessionData>(connection, &session_handle).await
+-            else {
+-                return PortalResponse::Other;
+-            };
+-
+-            let (cursor_mode, multiple, source_types, persisted_capture_sources) = {
+-                let session_data = interface.get_mut().await;
+-                let cursor_mode = session_data.cursor_mode.unwrap_or(CURSOR_MODE_EMBEDDED);
+-                let multiple = session_data.multiple;
+-                let source_types = session_data.source_types;
+-                let persisted_capture_sources = session_data.persisted_capture_sources.clone();
+-                (
+-                    cursor_mode,
+-                    multiple,
+-                    source_types,
+-                    persisted_capture_sources,
+-                )
+-            };
+-
+-            // XXX
+-            let outputs = self.wayland_helper.outputs();
+-            if outputs.is_empty() {
+-                log::error!("No output");
+-                return PortalResponse::Other;
+-            }
+-
+-            let capture_sources = if let Some(capture_sources) =
+-                persisted_capture_sources.and_then(|x| x.to_capture_sources(&self.wayland_helper))
++            match capture(
++                connection,
++                &self.wayland_helper,
++                &self.tx,
++                &session_handle,
++                app_id,
++            )
++            .await
+             {
+-                capture_sources
+-            } else {
+-                // Show dialog to prompt for what to capture
+-                let resp = screencast_dialog::show_screencast_prompt(
+-                    &self.tx,
+-                    &session_handle,
+-                    app_id,
+-                    multiple,
+-                    source_types,
+-                    &self.wayland_helper,
+-                )
+-                .await;
+-                let Some(capture_sources) = resp else {
+-                    return PortalResponse::Cancelled;
+-                };
+-                capture_sources
+-            };
+-
+-            let overlay_cursor = cursor_mode == CURSOR_MODE_EMBEDDED;
+-            // Use `FuturesOrdered` so streams are in consistent order
+-            let mut res_futures = FuturesOrdered::new();
+-            for output in &capture_sources.outputs {
+-                let info = self.wayland_helper.output_info(output);
+-                let (position, size) = if let Some(info) = info {
+-                    (info.logical_position, info.logical_size.unwrap_or((0, 0)))
+-                } else {
+-                    (Some((0, 0)), (0, 0))
+-                };
+-                res_futures.push_back(ScreencastThread::new(
+-                    self.wayland_helper.clone(),
+-                    CaptureSource::Output(output.clone()),
+-                    overlay_cursor,
+-                    StreamProps {
+-                        position,
+-                        size,
+-                        source_type: SOURCE_TYPE_MONITOR,
+-                        mapping_id: None,
+-                    },
+-                ));
++                CaptureOutcome::Success(result) => PortalResponse::Success(StartResult {
++                    streams: result.streams,
++                    persist_mode: None,
++                    restore_data: result.restore_data,
++                }),
++                CaptureOutcome::Cancelled => PortalResponse::Cancelled,
++                CaptureOutcome::Other => PortalResponse::Other,
+             }
+-            let toplevel_infos = self.wayland_helper.toplevels();
+-            for foreign_toplevel in &capture_sources.toplevels {
+-                let info = toplevel_infos
+-                    .iter()
+-                    .find(|info| info.foreign_toplevel == *foreign_toplevel);
+-                let size = if let Some(info) = info {
+-                    // Use size on output with greatest area
+-                    // XXX: No way to get size of whole toplevel?
+-                    info.geometry
+-                        .values()
+-                        .max_by_key(|info| info.width * info.height)
+-                        .map_or((0, 0), |info| (info.width, info.height))
+-                } else {
+-                    (0, 0)
+-                };
+-                res_futures.push_back(ScreencastThread::new(
+-                    self.wayland_helper.clone(),
+-                    CaptureSource::Toplevel(foreign_toplevel.clone()),
+-                    overlay_cursor,
+-                    StreamProps {
+-                        position: None,
+-                        size,
+-                        source_type: SOURCE_TYPE_WINDOW,
+-                        mapping_id: None,
+-                    },
+-                ));
+-            }
+-
+-            let mut failed = false;
+-            let mut screencast_threads = Vec::new();
+-            while let Some(res) = res_futures.next().await {
+-                match res {
+-                    Ok(thread) => screencast_threads.push(thread),
+-                    Err(err) => {
+-                        log::error!("Screencast thread failed: {}", err);
+-                        failed = true;
+-                    }
+-                }
+-            }
+-
+-            // Stop any thread that didn't fail
+-            if failed {
+-                for thread in screencast_threads {
+-                    thread.stop();
+-                }
+-                return PortalResponse::Other;
+-            }
+-
+-            // Session may have already been cancelled
+-            if interface.get().await.closed {
+-                for thread in screencast_threads {
+-                    thread.stop();
+-                }
+-                return PortalResponse::Cancelled;
+-            }
+-
+-            let streams = screencast_threads
+-                .iter()
+-                .map(|thread| (thread.node_id(), thread.stream_props()))
+-                .collect();
+-            interface.get_mut().await.screencast_threads = screencast_threads;
+-
+-            let persisted_capture_sources = PersistedCaptureSources::from_capture_sources(
+-                &self.wayland_helper,
+-                &capture_sources,
+-            );
+-
+-            PortalResponse::Success(StartResult {
+-                streams,
+-                persist_mode: None,
+-                restore_data: persisted_capture_sources.map(|x| x.into()),
+-            })
+         })
+         .await
+     }
+diff --git a/src/subscription.rs b/src/subscription.rs
+index 137bc8f2..645ae4df 100644
+--- a/src/subscription.rs
++++ b/src/subscription.rs
+@@ -90,7 +90,10 @@ pub(crate) async fn process_changes(
+             let connection = zbus::connection::Builder::session()?
+                 .serve_at(DBUS_PATH, Access::new(wayland_helper.clone(), tx.clone()))?
+                 .serve_at(DBUS_PATH, FileChooser::new(tx.clone()))?
+-                .serve_at(DBUS_PATH, RemoteDesktop)?
++                .serve_at(
++                    DBUS_PATH,
++                    RemoteDesktop::new(wayland_helper.clone(), tx.clone()),
++                )?
+                 .serve_at(
+                     DBUS_PATH,
+                     Screenshot::new(wayland_helper.clone(), tx.clone()),
+
+From 0d0c8227aa666e0937b451d0d9931b50fd38d0ce Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Tue, 16 Jun 2026 22:28:41 -0600
+Subject: [PATCH 06/11] remote_desktop: add permission dialog
+
+---
+ i18n/en/xdg_desktop_portal_cosmic.ftl |  11 +
+ src/app.rs                            |  19 +-
+ src/main.rs                           |   1 +
+ src/remote_desktop.rs                 |  62 +++++-
+ src/remote_desktop_dialog.rs          | 293 ++++++++++++++++++++++++++
+ src/screencast.rs                     |   2 +-
+ src/subscription.rs                   |  15 +-
+ 7 files changed, 389 insertions(+), 14 deletions(-)
+ create mode 100644 src/remote_desktop_dialog.rs
+
+diff --git a/i18n/en/xdg_desktop_portal_cosmic.ftl b/i18n/en/xdg_desktop_portal_cosmic.ftl
+index 5e6fe12e..2358ba37 100644
+--- a/i18n/en/xdg_desktop_portal_cosmic.ftl
++++ b/i18n/en/xdg_desktop_portal_cosmic.ftl
+@@ -1,4 +1,5 @@
+ allow = Allow
++deny = Deny
+ cancel = Cancel
+ capture = Capture
+ share = Share
+@@ -13,3 +14,13 @@ share-screen = Share your screen
+ unknown-application = Unknown Application
+ output = Output
+ window = Window
++
++remote-desktop = Remote control
++    .description = "{$app_name}" wants to remotely control this device using the input devices shown below.
++    .keyboard = Keyboard
++    .pointer = Pointer
++    .touchscreen = Touchscreen
++    .remember = Remember
++    .persist-none = This time only
++    .persist-while-running = Until the app closes
++    .persist-until-revoked = Until I revoke it
+diff --git a/src/app.rs b/src/app.rs
+index 58734215..e6d4a353 100644
+--- a/src/app.rs
++++ b/src/app.rs
+@@ -1,4 +1,7 @@
+-use crate::{access, config, file_chooser, screencast_dialog, screenshot, subscription};
++use crate::{
++    access, config, file_chooser, remote_desktop_dialog, screencast_dialog, screenshot,
++    subscription,
++};
+ use cosmic::iced::core::event::wayland::OutputEvent;
+ use cosmic::iced::platform_specific::shell::commands::layer_surface::get_layer_surface;
+ use cosmic::iced::runtime::platform_specific::wayland::layer_surface::{
+@@ -38,6 +41,7 @@ pub struct CosmicPortal {
+     pub screencast_args: Option<screencast_dialog::Args>,
+     pub screencast_tab_model:
+         widget::segmented_button::Model<widget::segmented_button::SingleSelect>,
++    pub remote_desktop_args: Option<remote_desktop_dialog::Args>,
+     pub location_options: Vec<String>,
+     pub prev_rectangle: Option<screenshot::Rect>,
+     pub wayland_helper: crate::wayland::WaylandHelper,
+@@ -64,6 +68,7 @@ pub enum Msg {
+     FileChooser(window::Id, file_chooser::Msg),
+     Screenshot(screenshot::Msg),
+     Screencast(screencast_dialog::Msg),
++    RemoteDesktop(remote_desktop_dialog::Msg),
+     Portal(subscription::Event),
+     Output(OutputEvent, WlOutput),
+     ConfigSetScreenshot(config::screenshot::Screenshot),
+@@ -114,6 +119,7 @@ impl cosmic::Application for CosmicPortal {
+                 screenshot_args: Default::default(),
+                 screencast_args: Default::default(),
+                 screencast_tab_model: Default::default(),
++                remote_desktop_args: Default::default(),
+                 location_options: Vec::new(),
+                 prev_rectangle: Default::default(),
+                 outputs: Default::default(),
+@@ -147,6 +153,8 @@ impl cosmic::Application for CosmicPortal {
+             access::view(self).map(Msg::Access)
+         } else if id == *screencast_dialog::SCREENCAST_ID {
+             screencast_dialog::view(self).map(Msg::Screencast)
++        } else if id == *remote_desktop_dialog::REMOTE_DESKTOP_ID {
++            remote_desktop_dialog::view(self).map(Msg::RemoteDesktop)
+         } else if self.outputs.iter().any(|o| o.id == id) {
+             screenshot::view(self, id).map(Msg::Screenshot)
+         } else if self.dummy_id == id {
+@@ -180,6 +188,12 @@ impl cosmic::Application for CosmicPortal {
+                 subscription::Event::CancelScreencast(handle) => {
+                     screencast_dialog::cancel(self, handle).map(cosmic::Action::App)
+                 }
++                subscription::Event::RemoteDesktop(args) => {
++                    remote_desktop_dialog::update_args(self, args).map(cosmic::Action::App)
++                }
++                subscription::Event::CancelRemoteDesktop(handle) => {
++                    remote_desktop_dialog::cancel(self, handle).map(cosmic::Action::App)
++                }
+                 subscription::Event::Config(config) => self.update(Msg::ConfigSubUpdate(config)),
+                 subscription::Event::Accent(_)
+                 | subscription::Event::IsDark(_)
+@@ -195,6 +209,9 @@ impl cosmic::Application for CosmicPortal {
+             },
+             Msg::Screenshot(m) => screenshot::update_msg(self, m).map(cosmic::Action::App),
+             Msg::Screencast(m) => screencast_dialog::update_msg(self, m).map(cosmic::Action::App),
++            Msg::RemoteDesktop(m) => {
++                remote_desktop_dialog::update_msg(self, m).map(cosmic::Action::App)
++            }
+             Msg::Output(o_event, wl_output) => {
+                 match o_event {
+                     OutputEvent::Created(Some(info))
+diff --git a/src/main.rs b/src/main.rs
+index 8764fd6e..2425eacc 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -14,6 +14,7 @@ mod documents;
+ mod file_chooser;
+ mod localize;
+ mod remote_desktop;
++mod remote_desktop_dialog;
+ mod screencast;
+ mod screencast_dialog;
+ mod screencast_thread;
+diff --git a/src/remote_desktop.rs b/src/remote_desktop.rs
+index 7eaf04b8..df0fc664 100644
+--- a/src/remote_desktop.rs
++++ b/src/remote_desktop.rs
+@@ -1,15 +1,28 @@
+ use crate::screencast::{self, CaptureOutcome, SessionData, StreamProps};
+ use crate::wayland::WaylandHelper;
+-use crate::{PortalResponse, Request, Session, screencast_dialog, subscription};
++use crate::{
++    PortalResponse, Request, Session, remote_desktop_dialog, screencast_dialog, subscription,
++};
+ use std::collections::HashMap;
+ use tokio::sync::mpsc::Sender;
+ use zbus::zvariant;
+ 
+-const ALL_DEVICE_TYPES: u32 = 1 | 2 | 4;
++// Device types, as defined by the RemoteDesktop portal spec.
++pub(crate) const DEVICE_KEYBOARD: u32 = 1;
++pub(crate) const DEVICE_POINTER: u32 = 2;
++pub(crate) const DEVICE_TOUCHSCREEN: u32 = 4;
++const ALL_DEVICE_TYPES: u32 = DEVICE_KEYBOARD | DEVICE_POINTER | DEVICE_TOUCHSCREEN;
++
++// Persist modes, as defined by the RemoteDesktop portal spec.
++pub(crate) const PERSIST_NONE: u32 = 0;
++pub(crate) const PERSIST_WHILE_RUNNING: u32 = 1;
++pub(crate) const PERSIST_UNTIL_REVOKED: u32 = 2;
+ 
+ pub(crate) struct RemoteDesktopData {
+     pub(crate) device_types: u32,
+     pub(crate) clipboard_enabled: bool,
++    pub(crate) persist_mode: u32,
++    pub(crate) granted_persist_mode: u32,
+     pub(crate) screen_cast_enabled: bool,
+ }
+ 
+@@ -18,6 +31,8 @@ impl Default for RemoteDesktopData {
+         Self {
+             device_types: ALL_DEVICE_TYPES,
+             clipboard_enabled: false,
++            persist_mode: PERSIST_NONE,
++            granted_persist_mode: PERSIST_NONE,
+             screen_cast_enabled: false,
+         }
+     }
+@@ -110,7 +125,8 @@ impl RemoteDesktop {
+             return PortalResponse::Other;
+         };
+         remote_desktop.device_types = options.types.unwrap_or(ALL_DEVICE_TYPES) & ALL_DEVICE_TYPES;
+-        // TODO: persist_mode / restore_data
++        remote_desktop.persist_mode = options.persist_mode.unwrap_or(PERSIST_NONE);
++        // TODO: restore_data
+         PortalResponse::Success(HashMap::new())
+     }
+ 
+@@ -123,26 +139,50 @@ impl RemoteDesktop {
+         parent_window: String,
+         options: HashMap<String, zvariant::OwnedValue>,
+     ) -> PortalResponse<StartResult> {
+-        let on_cancel = || screencast_dialog::hide_screencast_prompt(&self.tx, &session_handle);
++        // Dismiss whichever prompt is up: the permission dialog or the screencast picker.
++        let on_cancel = || async {
++            remote_desktop_dialog::hide_remote_desktop_prompt(&self.tx, &session_handle).await;
++            screencast_dialog::hide_screencast_prompt(&self.tx, &session_handle).await;
++        };
+         Request::run(connection, &handle, on_cancel, async {
+-            let (device_types, clipboard_enabled, screen_cast_enabled) = {
+-                let Some(interface) =
+-                    crate::session_interface::<SessionData>(connection, &session_handle).await
+-                else {
+-                    return PortalResponse::Other;
+-                };
++            let Some(interface) =
++                crate::session_interface::<SessionData>(connection, &session_handle).await
++            else {
++                return PortalResponse::Other;
++            };
++
++            let (device_types, clipboard_enabled, persist_mode, screen_cast_enabled) = {
+                 let session_data = interface.get().await;
+                 let Some(remote_desktop) = session_data.remote_desktop.as_ref() else {
+                     return PortalResponse::Other;
+                 };
+-                // Without a prompt yet, the granted devices are whatever was selected.
+                 (
+                     remote_desktop.device_types,
+                     remote_desktop.clipboard_enabled,
++                    remote_desktop.persist_mode,
+                     remote_desktop.screen_cast_enabled,
+                 )
+             };
+ 
++            let resp = remote_desktop_dialog::show_remote_desktop_prompt(
++                &self.tx,
++                &session_handle,
++                app_id.clone(),
++                device_types,
++                persist_mode,
++            )
++            .await;
++            let Some(response) = resp else {
++                return PortalResponse::Cancelled;
++            };
++
++            if interface.get().await.closed {
++                return PortalResponse::Cancelled;
++            }
++            if let Some(remote_desktop) = interface.get_mut().await.remote_desktop.as_mut() {
++                remote_desktop.granted_persist_mode = response.persist_mode;
++            }
++
+             // Reuse the ScreenCast.Start capture path; streams are returned here.
+             let streams = if screen_cast_enabled {
+                 match screencast::capture(
+diff --git a/src/remote_desktop_dialog.rs b/src/remote_desktop_dialog.rs
+new file mode 100644
+index 00000000..9b6d66c5
+--- /dev/null
++++ b/src/remote_desktop_dialog.rs
+@@ -0,0 +1,293 @@
++use crate::app::CosmicPortal;
++use crate::fl;
++use crate::remote_desktop::{
++    DEVICE_KEYBOARD, DEVICE_POINTER, DEVICE_TOUCHSCREEN, PERSIST_NONE, PERSIST_UNTIL_REVOKED,
++    PERSIST_WHILE_RUNNING,
++};
++use crate::widget::keyboard_wrapper::KeyboardWrapper;
++use cosmic::iced::keyboard::Key;
++use cosmic::iced::keyboard::key::Named;
++use cosmic::iced::platform_specific::shell::commands::layer_surface::{
++    KeyboardInteractivity, Layer, destroy_layer_surface, get_layer_surface,
++};
++use cosmic::iced::runtime::platform_specific::wayland::layer_surface::SctkLayerSurfaceSettings;
++use cosmic::iced::{self, window};
++use cosmic::widget::{self, autosize};
++use freedesktop_desktop_entry as fde;
++use freedesktop_desktop_entry::unicase::Ascii;
++use freedesktop_desktop_entry::{DesktopEntry, get_languages_from_env};
++use std::sync::LazyLock;
++use tokio::sync::mpsc;
++use zbus::zvariant;
++
++pub static REMOTE_DESKTOP_ID: LazyLock<window::Id> = LazyLock::new(window::Id::unique);
++pub static REMOTE_DESKTOP_WIDGET_ID: LazyLock<widget::Id> =
++    LazyLock::new(|| widget::Id::new("remote-desktop".to_string()));
++
++#[derive(Clone, Debug)]
++pub struct RemoteDesktopResponse {
++    pub persist_mode: u32,
++}
++
++pub async fn hide_remote_desktop_prompt(
++    subscription_tx: &mpsc::Sender<crate::subscription::Event>,
++    session_handle: &zvariant::ObjectPath<'_>,
++) {
++    let _ = subscription_tx
++        .send(crate::subscription::Event::CancelRemoteDesktop(
++            session_handle.to_owned(),
++        ))
++        .await;
++}
++
++pub async fn show_remote_desktop_prompt(
++    subscription_tx: &mpsc::Sender<crate::subscription::Event>,
++    session_handle: &zvariant::ObjectPath<'_>,
++    app_id: String,
++    device_types: u32,
++    persist_mode: u32,
++) -> Option<RemoteDesktopResponse> {
++    let locales = get_languages_from_env();
++    let desktop_entries = load_desktop_entries(&locales).await;
++    let entry = get_desktop_entry(&desktop_entries, &app_id);
++    let app_name = entry.and_then(|x| Some(x.name(&locales)?.into_owned()));
++    let app_icon = entry.and_then(|x| Some(x.icon()?.to_string()));
++
++    let persist_options: Vec<u32> = (PERSIST_NONE..=persist_mode.min(PERSIST_UNTIL_REVOKED))
++        .filter(|mode| persist_mode_label(*mode).is_some())
++        .collect();
++
++    let (tx, mut rx) = mpsc::channel(1);
++    let args = Args {
++        session_handle: session_handle.to_owned(),
++        app_name,
++        app_icon,
++        device_types,
++        persist_options,
++        selected_persist: 0,
++        tx,
++    };
++    subscription_tx
++        .send(crate::subscription::Event::RemoteDesktop(args))
++        .await
++        .unwrap();
++    rx.recv().await.unwrap()
++}
++
++async fn load_desktop_entries(locales: &[String]) -> Vec<DesktopEntry> {
++    let mut entries = Vec::new();
++    for p in fde::Iter::new(fde::default_paths()) {
++        if let Ok(data) = tokio::fs::read_to_string(&p).await
++            && let Ok(entry) = DesktopEntry::from_str(&p, &data, Some(locales))
++        {
++            entries.push(entry.to_owned());
++        }
++    }
++    entries
++}
++
++fn get_desktop_entry<'a>(entries: &'a [DesktopEntry], id: &str) -> Option<&'a DesktopEntry> {
++    fde::find_app_by_id(entries, Ascii::new(id))
++}
++
++fn create_dialog() -> cosmic::Task<crate::app::Msg> {
++    get_layer_surface(SctkLayerSurfaceSettings {
++        id: *REMOTE_DESKTOP_ID,
++        keyboard_interactivity: KeyboardInteractivity::Exclusive,
++        namespace: "remote-desktop".into(),
++        layer: Layer::Overlay,
++        size: None,
++        ..Default::default()
++    })
++}
++
++fn device_type_icon_label(device_type: u32) -> Option<(&'static str, String)> {
++    match device_type {
++        DEVICE_KEYBOARD => Some(("input-keyboard-symbolic", fl!("remote-desktop", "keyboard"))),
++        DEVICE_POINTER => Some(("input-mouse-symbolic", fl!("remote-desktop", "pointer"))),
++        DEVICE_TOUCHSCREEN => Some((
++            "input-touchpad-symbolic",
++            fl!("remote-desktop", "touchscreen"),
++        )),
++        _ => None,
++    }
++}
++
++fn persist_mode_label(persist_mode: u32) -> Option<String> {
++    match persist_mode {
++        PERSIST_NONE => Some(fl!("remote-desktop", "persist-none")),
++        PERSIST_WHILE_RUNNING => Some(fl!("remote-desktop", "persist-while-running")),
++        PERSIST_UNTIL_REVOKED => Some(fl!("remote-desktop", "persist-until-revoked")),
++        _ => None,
++    }
++}
++
++#[derive(Debug, Clone)]
++pub struct Args {
++    session_handle: zvariant::ObjectPath<'static>,
++    app_name: Option<String>,
++    app_icon: Option<String>,
++    device_types: u32,
++    persist_options: Vec<u32>,
++    selected_persist: usize,
++    // Should be oneshot, but need `Clone` bound
++    tx: mpsc::Sender<Option<RemoteDesktopResponse>>,
++}
++
++impl Args {
++    fn send_response(self, response: Option<RemoteDesktopResponse>) {
++        tokio::spawn(async move {
++            if let Err(err) = self.tx.send(response).await {
++                log::error!("Failed to send remote desktop event: {}", err);
++            }
++        });
++    }
++}
++
++#[derive(Clone, Debug)]
++pub enum Msg {
++    SelectPersist(usize),
++    Allow,
++    Cancel,
++}
++
++pub fn update_msg(portal: &mut CosmicPortal, msg: Msg) -> cosmic::Task<crate::app::Msg> {
++    match msg {
++        Msg::SelectPersist(index) => {
++            if let Some(args) = portal.remote_desktop_args.as_mut() {
++                args.selected_persist = index;
++            }
++            cosmic::Task::none()
++        }
++        Msg::Allow => {
++            if let Some(args) = portal.remote_desktop_args.take() {
++                let persist_mode = args
++                    .persist_options
++                    .get(args.selected_persist)
++                    .copied()
++                    .unwrap_or(PERSIST_NONE);
++                args.send_response(Some(RemoteDesktopResponse { persist_mode }));
++                return destroy_layer_surface(*REMOTE_DESKTOP_ID);
++            }
++            cosmic::Task::none()
++        }
++        Msg::Cancel => {
++            if let Some(args) = portal.remote_desktop_args.take() {
++                args.send_response(None);
++                return destroy_layer_surface(*REMOTE_DESKTOP_ID);
++            }
++            cosmic::Task::none()
++        }
++    }
++}
++
++pub fn update_args(portal: &mut CosmicPortal, args: Args) -> cosmic::Task<crate::app::Msg> {
++    // If the dialog is already open, cancel the previous request, but re-use the surface.
++    let command = if let Some(args) = portal.remote_desktop_args.take() {
++        args.send_response(None);
++        cosmic::Task::none()
++    } else {
++        create_dialog()
++    };
++    portal.remote_desktop_args = Some(args);
++    command
++}
++
++pub fn cancel(
++    portal: &mut CosmicPortal,
++    session_handle: zvariant::ObjectPath<'static>,
++) -> cosmic::Task<crate::app::Msg> {
++    if portal
++        .remote_desktop_args
++        .as_ref()
++        .is_some_and(|args| args.session_handle == session_handle)
++    {
++        let args = portal.remote_desktop_args.take().unwrap();
++        args.send_response(None);
++        destroy_layer_surface(*REMOTE_DESKTOP_ID)
++    } else {
++        cosmic::Task::none()
++    }
++}
++
++pub(crate) fn view(portal: &CosmicPortal) -> cosmic::Element<'_, Msg> {
++    let spacing = portal.core.system_theme().cosmic().spacing;
++    let Some(args) = portal.remote_desktop_args.as_ref() else {
++        return widget::space::horizontal()
++            .width(iced::Length::Fixed(1.0))
++            .into();
++    };
++
++    let unknown = fl!("unknown-application");
++    let app_name = args.app_name.as_deref().unwrap_or(&unknown);
++
++    let mut devices = Vec::new();
++    for device_type in [DEVICE_KEYBOARD, DEVICE_POINTER, DEVICE_TOUCHSCREEN] {
++        if args.device_types & device_type == 0 {
++            continue;
++        }
++        if let Some((icon_name, label)) = device_type_icon_label(device_type) {
++            devices.push(
++                widget::column::with_children(vec![
++                    widget::icon::from_name(icon_name).size(32).into(),
++                    widget::text(label).into(),
++                ])
++                .spacing(spacing.space_xxs as f32)
++                .align_x(iced::Alignment::Center)
++                .into(),
++            );
++        }
++    }
++    let devices = widget::row::with_children(devices).spacing(spacing.space_l as f32);
++
++    let mut control = widget::column::with_children(vec![devices.into()])
++        .spacing(spacing.space_m as f32)
++        .align_x(iced::Alignment::Center);
++
++    if args.persist_options.len() > 1 {
++        let labels: Vec<String> = args
++            .persist_options
++            .iter()
++            .filter_map(|mode| persist_mode_label(*mode))
++            .collect();
++        let dropdown = widget::dropdown(labels, Some(args.selected_persist), Msg::SelectPersist);
++        control = control.push(
++            widget::row::with_children(vec![
++                widget::text(fl!("remote-desktop", "remember")).into(),
++                dropdown.into(),
++            ])
++            .spacing(spacing.space_s as f32)
++            .align_y(iced::Alignment::Center),
++        );
++    }
++
++    let icon =
++        widget::icon::from_name(args.app_icon.as_deref().unwrap_or("image-missing")).size(64);
++
++    let cancel_button = widget::button::standard(fl!("deny")).on_press(Msg::Cancel);
++    let allow_button = widget::button::standard(fl!("allow"))
++        .class(cosmic::style::Button::Suggested)
++        .on_press(Msg::Allow);
++
++    let content = KeyboardWrapper::new(
++        widget::dialog()
++            .title(fl!("remote-desktop"))
++            .body(fl!("remote-desktop", "description", app_name = app_name))
++            .icon(icon)
++            .control(control)
++            .secondary_action(cancel_button)
++            .primary_action(allow_button),
++        |key, _| match key {
++            Key::Named(Named::Enter) => Some(Msg::Allow),
++            Key::Named(Named::Escape) => Some(Msg::Cancel),
++            _ => None,
++        },
++    );
++
++    autosize::autosize(content, REMOTE_DESKTOP_WIDGET_ID.clone())
++        .min_width(1.)
++        .min_height(1.)
++        .max_width(572.)
++        .max_height(884.)
++        .into()
++}
+diff --git a/src/screencast.rs b/src/screencast.rs
+index f27b6750..df46eb24 100644
+--- a/src/screencast.rs
++++ b/src/screencast.rs
+@@ -151,7 +151,7 @@ pub(crate) struct SessionData {
+     multiple: bool,
+     source_types: BitFlags<SourceType>,
+     persisted_capture_sources: Option<PersistedCaptureSources>,
+-    closed: bool,
++    pub(crate) closed: bool,
+     pub(crate) remote_desktop: Option<RemoteDesktopData>,
+ }
+ 
+diff --git a/src/subscription.rs b/src/subscription.rs
+index 645ae4df..ed1adfb4 100644
+--- a/src/subscription.rs
++++ b/src/subscription.rs
+@@ -11,11 +11,12 @@ use zbus::{Connection, fdo, zvariant};
+ 
+ use crate::access::Access;
+ use crate::file_chooser::FileChooser;
++use crate::remote_desktop::RemoteDesktop;
+ use crate::screencast::ScreenCast;
+ use crate::screenshot::Screenshot;
+ use crate::{
+     ACCENT_COLOR_KEY, APPEARANCE_NAMESPACE, COLOR_SCHEME_KEY, CONTRAST_KEY, ColorScheme, Contrast,
+-    DBUS_NAME, DBUS_PATH, Settings, config, remote_desktop::RemoteDesktop, wayland,
++    DBUS_NAME, DBUS_PATH, Settings, config, wayland,
+ };
+ 
+ #[derive(Clone, Debug)]
+@@ -25,6 +26,8 @@ pub enum Event {
+     Screenshot(crate::screenshot::Args),
+     Screencast(crate::screencast_dialog::Args),
+     CancelScreencast(zvariant::ObjectPath<'static>),
++    RemoteDesktop(crate::remote_desktop_dialog::Args),
++    CancelRemoteDesktop(zvariant::ObjectPath<'static>),
+     Accent(Srgba),
+     IsDark(bool),
+     HighContrast(bool),
+@@ -146,6 +149,16 @@ pub(crate) async fn process_changes(
+                             log::error!("Error sending screencast cancel: {:?}", err);
+                         };
+                     }
++                    Event::RemoteDesktop(args) => {
++                        if let Err(err) = output.send(Event::RemoteDesktop(args)).await {
++                            log::error!("Error sending remote desktop event: {:?}", err);
++                        };
++                    }
++                    Event::CancelRemoteDesktop(handle) => {
++                        if let Err(err) = output.send(Event::CancelRemoteDesktop(handle)).await {
++                            log::error!("Error sending remote desktop cancel: {:?}", err);
++                        };
++                    }
+                     Event::Accent(a) => {
+                         let object_server = conn.object_server();
+                         let iface_ref = object_server.interface::<_, Settings>(DBUS_PATH).await?;
+
+From ea8673cc7e7550a0071a69371dc6ddfdbcff0db5 Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Tue, 16 Jun 2026 22:28:41 -0600
+Subject: [PATCH 07/11] fix: merge screencast picker into one dialog
+
+---
+ src/remote_desktop.rs        |  38 ++--
+ src/remote_desktop_dialog.rs | 146 ++++++++++++--
+ src/screencast.rs            |  38 ++--
+ src/screencast_dialog.rs     | 362 ++++++++++++++++++++---------------
+ 4 files changed, 385 insertions(+), 199 deletions(-)
+
+diff --git a/src/remote_desktop.rs b/src/remote_desktop.rs
+index df0fc664..0e124ca2 100644
+--- a/src/remote_desktop.rs
++++ b/src/remote_desktop.rs
+@@ -1,8 +1,6 @@
+ use crate::screencast::{self, CaptureOutcome, SessionData, StreamProps};
+ use crate::wayland::WaylandHelper;
+-use crate::{
+-    PortalResponse, Request, Session, remote_desktop_dialog, screencast_dialog, subscription,
+-};
++use crate::{PortalResponse, Request, Session, remote_desktop_dialog, subscription};
+ use std::collections::HashMap;
+ use tokio::sync::mpsc::Sender;
+ use zbus::zvariant;
+@@ -139,11 +137,8 @@ impl RemoteDesktop {
+         parent_window: String,
+         options: HashMap<String, zvariant::OwnedValue>,
+     ) -> PortalResponse<StartResult> {
+-        // Dismiss whichever prompt is up: the permission dialog or the screencast picker.
+-        let on_cancel = || async {
+-            remote_desktop_dialog::hide_remote_desktop_prompt(&self.tx, &session_handle).await;
+-            screencast_dialog::hide_screencast_prompt(&self.tx, &session_handle).await;
+-        };
++        let on_cancel =
++            || remote_desktop_dialog::hide_remote_desktop_prompt(&self.tx, &session_handle);
+         Request::run(connection, &handle, on_cancel, async {
+             let Some(interface) =
+                 crate::session_interface::<SessionData>(connection, &session_handle).await
+@@ -151,7 +146,14 @@ impl RemoteDesktop {
+                 return PortalResponse::Other;
+             };
+ 
+-            let (device_types, clipboard_enabled, persist_mode, screen_cast_enabled) = {
++            let (
++                device_types,
++                clipboard_enabled,
++                persist_mode,
++                screen_cast_enabled,
++                multiple,
++                source_types,
++            ) = {
+                 let session_data = interface.get().await;
+                 let Some(remote_desktop) = session_data.remote_desktop.as_ref() else {
+                     return PortalResponse::Other;
+@@ -161,15 +163,26 @@ impl RemoteDesktop {
+                     remote_desktop.clipboard_enabled,
+                     remote_desktop.persist_mode,
+                     remote_desktop.screen_cast_enabled,
++                    session_data.multiple,
++                    session_data.source_types,
+                 )
+             };
+ 
++            if screen_cast_enabled && self.wayland_helper.outputs().is_empty() {
++                log::error!("No output");
++                return PortalResponse::Other;
++            }
++
+             let resp = remote_desktop_dialog::show_remote_desktop_prompt(
+                 &self.tx,
+                 &session_handle,
+-                app_id.clone(),
++                app_id,
+                 device_types,
+                 persist_mode,
++                screen_cast_enabled,
++                multiple,
++                source_types,
++                &self.wayland_helper,
+             )
+             .await;
+             let Some(response) = resp else {
+@@ -185,12 +198,11 @@ impl RemoteDesktop {
+ 
+             // Reuse the ScreenCast.Start capture path; streams are returned here.
+             let streams = if screen_cast_enabled {
+-                match screencast::capture(
++                match screencast::capture_from_sources(
+                     connection,
+                     &self.wayland_helper,
+-                    &self.tx,
+                     &session_handle,
+-                    app_id,
++                    response.capture_sources,
+                 )
+                 .await
+                 {
+diff --git a/src/remote_desktop_dialog.rs b/src/remote_desktop_dialog.rs
+index 9b6d66c5..23046116 100644
+--- a/src/remote_desktop_dialog.rs
++++ b/src/remote_desktop_dialog.rs
+@@ -4,7 +4,11 @@ use crate::remote_desktop::{
+     DEVICE_KEYBOARD, DEVICE_POINTER, DEVICE_TOUCHSCREEN, PERSIST_NONE, PERSIST_UNTIL_REVOKED,
+     PERSIST_WHILE_RUNNING,
+ };
++use crate::screencast_dialog::{self, CaptureSources};
++use crate::wayland::WaylandHelper;
+ use crate::widget::keyboard_wrapper::KeyboardWrapper;
++use ashpd::desktop::screencast::SourceType;
++use ashpd::enumflags2::BitFlags;
+ use cosmic::iced::keyboard::Key;
+ use cosmic::iced::keyboard::key::Named;
+ use cosmic::iced::platform_specific::shell::commands::layer_surface::{
+@@ -13,11 +17,15 @@ use cosmic::iced::platform_specific::shell::commands::layer_surface::{
+ use cosmic::iced::runtime::platform_specific::wayland::layer_surface::SctkLayerSurfaceSettings;
+ use cosmic::iced::{self, window};
+ use cosmic::widget::{self, autosize};
++use cosmic_client_toolkit::sctk::output::OutputInfo;
++use cosmic_client_toolkit::toplevel_info::ToplevelInfo;
+ use freedesktop_desktop_entry as fde;
+ use freedesktop_desktop_entry::unicase::Ascii;
+ use freedesktop_desktop_entry::{DesktopEntry, get_languages_from_env};
+ use std::sync::LazyLock;
+ use tokio::sync::mpsc;
++use wayland_client::protocol::wl_output::WlOutput;
++use wayland_protocols::ext::foreign_toplevel_list::v1::client::ext_foreign_toplevel_handle_v1::ExtForeignToplevelHandleV1;
+ use zbus::zvariant;
+ 
+ pub static REMOTE_DESKTOP_ID: LazyLock<window::Id> = LazyLock::new(window::Id::unique);
+@@ -27,6 +35,7 @@ pub static REMOTE_DESKTOP_WIDGET_ID: LazyLock<widget::Id> =
+ #[derive(Clone, Debug)]
+ pub struct RemoteDesktopResponse {
+     pub persist_mode: u32,
++    pub capture_sources: CaptureSources,
+ }
+ 
+ pub async fn hide_remote_desktop_prompt(
+@@ -40,12 +49,17 @@ pub async fn hide_remote_desktop_prompt(
+         .await;
+ }
+ 
++#[allow(clippy::too_many_arguments)]
+ pub async fn show_remote_desktop_prompt(
+     subscription_tx: &mpsc::Sender<crate::subscription::Event>,
+     session_handle: &zvariant::ObjectPath<'_>,
+     app_id: String,
+     device_types: u32,
+     persist_mode: u32,
++    screen_cast_enabled: bool,
++    multiple: bool,
++    source_types: BitFlags<SourceType>,
++    wayland_helper: &WaylandHelper,
+ ) -> Option<RemoteDesktopResponse> {
+     let locales = get_languages_from_env();
+     let desktop_entries = load_desktop_entries(&locales).await;
+@@ -57,6 +71,12 @@ pub async fn show_remote_desktop_prompt(
+         .filter(|mode| persist_mode_label(*mode).is_some())
+         .collect();
+ 
++    let (outputs, toplevels) = if screen_cast_enabled {
++        screencast_dialog::gather_capture_sources(wayland_helper, &desktop_entries).await
++    } else {
++        (Vec::new(), Vec::new())
++    };
++
+     let (tx, mut rx) = mpsc::channel(1);
+     let args = Args {
+         session_handle: session_handle.to_owned(),
+@@ -65,6 +85,12 @@ pub async fn show_remote_desktop_prompt(
+         device_types,
+         persist_options,
+         selected_persist: 0,
++        screen_cast_enabled,
++        multiple,
++        source_types,
++        outputs,
++        toplevels,
++        capture_sources: Default::default(),
+         tx,
+     };
+     subscription_tx
+@@ -130,6 +156,12 @@ pub struct Args {
+     device_types: u32,
+     persist_options: Vec<u32>,
+     selected_persist: usize,
++    screen_cast_enabled: bool,
++    multiple: bool,
++    source_types: BitFlags<SourceType>,
++    outputs: Vec<(WlOutput, OutputInfo, Option<widget::image::Handle>)>,
++    toplevels: Vec<(ToplevelInfo, Option<String>)>,
++    capture_sources: CaptureSources,
+     // Should be oneshot, but need `Clone` bound
+     tx: mpsc::Sender<Option<RemoteDesktopResponse>>,
+ }
+@@ -147,6 +179,9 @@ impl Args {
+ #[derive(Clone, Debug)]
+ pub enum Msg {
+     SelectPersist(usize),
++    ActivateTab(widget::segmented_button::Entity),
++    SelectOutput(WlOutput),
++    SelectToplevel(ExtForeignToplevelHandleV1),
+     Allow,
+     Cancel,
+ }
+@@ -159,6 +194,23 @@ pub fn update_msg(portal: &mut CosmicPortal, msg: Msg) -> cosmic::Task<crate::ap
+             }
+             cosmic::Task::none()
+         }
++        Msg::ActivateTab(tab) => {
++            portal.screencast_tab_model.activate(tab);
++            cosmic::Task::none()
++        }
++        Msg::SelectOutput(output) => {
++            if let Some(args) = portal.remote_desktop_args.as_mut() {
++                args.capture_sources.toggle_output(output, args.multiple);
++            }
++            cosmic::Task::none()
++        }
++        Msg::SelectToplevel(toplevel) => {
++            if let Some(args) = portal.remote_desktop_args.as_mut() {
++                args.capture_sources
++                    .toggle_toplevel(toplevel, args.multiple);
++            }
++            cosmic::Task::none()
++        }
+         Msg::Allow => {
+             if let Some(args) = portal.remote_desktop_args.take() {
+                 let persist_mode = args
+@@ -166,7 +218,11 @@ pub fn update_msg(portal: &mut CosmicPortal, msg: Msg) -> cosmic::Task<crate::ap
+                     .get(args.selected_persist)
+                     .copied()
+                     .unwrap_or(PERSIST_NONE);
+-                args.send_response(Some(RemoteDesktopResponse { persist_mode }));
++                let capture_sources = args.capture_sources.clone();
++                args.send_response(Some(RemoteDesktopResponse {
++                    persist_mode,
++                    capture_sources,
++                }));
+                 return destroy_layer_surface(*REMOTE_DESKTOP_ID);
+             }
+             cosmic::Task::none()
+@@ -189,6 +245,26 @@ pub fn update_args(portal: &mut CosmicPortal, args: Args) -> cosmic::Task<crate:
+     } else {
+         create_dialog()
+     };
++
++    portal.screencast_tab_model.clear();
++    if args.screen_cast_enabled {
++        if args.source_types.contains(SourceType::Monitor) {
++            portal
++                .screencast_tab_model
++                .insert()
++                .data(screencast_dialog::Tab::Outputs)
++                .text(fl!("output"));
++        }
++        if args.source_types.contains(SourceType::Window) {
++            portal
++                .screencast_tab_model
++                .insert()
++                .data(screencast_dialog::Tab::Windows)
++                .text(fl!("window"));
++        }
++        portal.screencast_tab_model.activate_position(0);
++    }
++
+     portal.remote_desktop_args = Some(args);
+     command
+ }
+@@ -240,26 +316,25 @@ pub(crate) fn view(portal: &CosmicPortal) -> cosmic::Element<'_, Msg> {
+     }
+     let devices = widget::row::with_children(devices).spacing(spacing.space_l as f32);
+ 
+-    let mut control = widget::column::with_children(vec![devices.into()])
+-        .spacing(spacing.space_m as f32)
+-        .align_x(iced::Alignment::Center);
+-
+-    if args.persist_options.len() > 1 {
++    let persist: Option<cosmic::Element<Msg>> = if args.persist_options.len() > 1 {
+         let labels: Vec<String> = args
+             .persist_options
+             .iter()
+             .filter_map(|mode| persist_mode_label(*mode))
+             .collect();
+         let dropdown = widget::dropdown(labels, Some(args.selected_persist), Msg::SelectPersist);
+-        control = control.push(
++        Some(
+             widget::row::with_children(vec![
+                 widget::text(fl!("remote-desktop", "remember")).into(),
+                 dropdown.into(),
+             ])
+             .spacing(spacing.space_s as f32)
+-            .align_y(iced::Alignment::Center),
+-        );
+-    }
++            .align_y(iced::Alignment::Center)
++            .into(),
++        )
++    } else {
++        None
++    };
+ 
+     let icon =
+         widget::icon::from_name(args.app_icon.as_deref().unwrap_or("image-missing")).size(64);
+@@ -269,20 +344,55 @@ pub(crate) fn view(portal: &CosmicPortal) -> cosmic::Element<'_, Msg> {
+         .class(cosmic::style::Button::Suggested)
+         .on_press(Msg::Allow);
+ 
+-    let content = KeyboardWrapper::new(
++    let dialog = if args.screen_cast_enabled {
++        let mut header_col = widget::column::with_children(vec![
++            widget::text::title3(fl!("remote-desktop")).into(),
++            widget::text::body(fl!("remote-desktop", "description", app_name = app_name)).into(),
++            devices.into(),
++        ])
++        .spacing(spacing.space_s as f32);
++        if let Some(persist) = persist {
++            header_col = header_col.push(persist);
++        }
++        let header = widget::row::with_children(vec![icon.into(), header_col.into()])
++            .spacing(spacing.space_s as f32);
++
++        let sources = screencast_dialog::sources_view(
++            &portal.screencast_tab_model,
++            &args.outputs,
++            &args.toplevels,
++            &args.capture_sources,
++            Msg::ActivateTab,
++            Msg::SelectOutput,
++            Msg::SelectToplevel,
++        );
++
++        widget::dialog()
++            .control(header)
++            .control(sources)
++            .secondary_action(cancel_button)
++            .primary_action(allow_button)
++    } else {
++        let mut control = widget::column::with_children(vec![devices.into()])
++            .spacing(spacing.space_m as f32)
++            .align_x(iced::Alignment::Center);
++        if let Some(persist) = persist {
++            control = control.push(persist);
++        }
+         widget::dialog()
+             .title(fl!("remote-desktop"))
+             .body(fl!("remote-desktop", "description", app_name = app_name))
+             .icon(icon)
+             .control(control)
+             .secondary_action(cancel_button)
+-            .primary_action(allow_button),
+-        |key, _| match key {
+-            Key::Named(Named::Enter) => Some(Msg::Allow),
+-            Key::Named(Named::Escape) => Some(Msg::Cancel),
+-            _ => None,
+-        },
+-    );
++            .primary_action(allow_button)
++    };
++
++    let content = KeyboardWrapper::new(dialog, |key, _| match key {
++        Key::Named(Named::Enter) => Some(Msg::Allow),
++        Key::Named(Named::Escape) => Some(Msg::Cancel),
++        _ => None,
++    });
+ 
+     autosize::autosize(content, REMOTE_DESKTOP_WIDGET_ID.clone())
+         .min_width(1.)
+diff --git a/src/screencast.rs b/src/screencast.rs
+index df46eb24..cc42ae53 100644
+--- a/src/screencast.rs
++++ b/src/screencast.rs
+@@ -148,8 +148,8 @@ struct StartResult {
+ pub(crate) struct SessionData {
+     screencast_threads: Vec<ScreencastThread>,
+     cursor_mode: Option<u32>,
+-    multiple: bool,
+-    source_types: BitFlags<SourceType>,
++    pub(crate) multiple: bool,
++    pub(crate) source_types: BitFlags<SourceType>,
+     persisted_capture_sources: Option<PersistedCaptureSources>,
+     pub(crate) closed: bool,
+     pub(crate) remote_desktop: Option<RemoteDesktopData>,
+@@ -194,17 +194,12 @@ pub(crate) async fn capture(
+         return CaptureOutcome::Other;
+     };
+ 
+-    let (cursor_mode, multiple, source_types, persisted_capture_sources) = {
+-        let session_data = interface.get_mut().await;
+-        let cursor_mode = session_data.cursor_mode.unwrap_or(CURSOR_MODE_EMBEDDED);
+-        let multiple = session_data.multiple;
+-        let source_types = session_data.source_types;
+-        let persisted_capture_sources = session_data.persisted_capture_sources.clone();
++    let (multiple, source_types, persisted_capture_sources) = {
++        let session_data = interface.get().await;
+         (
+-            cursor_mode,
+-            multiple,
+-            source_types,
+-            persisted_capture_sources,
++            session_data.multiple,
++            session_data.source_types,
++            session_data.persisted_capture_sources.clone(),
+         )
+     };
+ 
+@@ -236,6 +231,25 @@ pub(crate) async fn capture(
+         capture_sources
+     };
+ 
++    capture_from_sources(connection, wayland_helper, session_handle, capture_sources).await
++}
++
++pub(crate) async fn capture_from_sources(
++    connection: &zbus::Connection,
++    wayland_helper: &WaylandHelper,
++    session_handle: &zvariant::ObjectPath<'_>,
++    capture_sources: CaptureSources,
++) -> CaptureOutcome {
++    let Some(interface) = crate::session_interface::<SessionData>(connection, session_handle).await
++    else {
++        return CaptureOutcome::Other;
++    };
++
++    let cursor_mode = interface
++        .get()
++        .await
++        .cursor_mode
++        .unwrap_or(CURSOR_MODE_EMBEDDED);
+     let overlay_cursor = cursor_mode == CURSOR_MODE_EMBEDDED;
+     // Use `FuturesOrdered` so streams are in consistent order
+     let mut res_futures = FuturesOrdered::new();
+diff --git a/src/screencast_dialog.rs b/src/screencast_dialog.rs
+index 5107a098..900e64e5 100644
+--- a/src/screencast_dialog.rs
++++ b/src/screencast_dialog.rs
+@@ -54,34 +54,7 @@ pub async fn show_screencast_prompt(
+     let locales = get_languages_from_env();
+     let desktop_entries = load_desktop_entries(&locales).await;
+ 
+-    let toplevels = wayland_helper
+-        .toplevels()
+-        .into_iter()
+-        .map(|info| {
+-            let icon = get_desktop_entry(&desktop_entries, &info.app_id)
+-                .and_then(|x| Some(x.icon()?.to_string()));
+-            (info, icon)
+-        })
+-        .collect();
+-
+-    let mut outputs = Vec::new();
+-    for output in wayland_helper.outputs() {
+-        let Some(info) = wayland_helper.output_info(&output) else {
+-            continue;
+-        };
+-        let source = CaptureSource::Output(output.clone());
+-        let image = wayland_helper
+-            .capture_source_shm(source, false)
+-            .await
+-            .and_then(|image| image.image_transformed().ok())
+-            .map(|image| {
+-                widget::image::Handle::from_rgba(image.width(), image.height(), image.into_vec())
+-            });
+-        outputs.push((output, info, image));
+-    }
+-
+-    // Order outputs by their position in the display arrangement
+-    outputs.sort_by_key(|(_, info, _)| info.logical_position.unwrap_or((i32::MAX, i32::MAX)));
++    let (outputs, toplevels) = gather_capture_sources(wayland_helper, &desktop_entries).await;
+ 
+     let app_name = get_desktop_entry(&desktop_entries, &app_id)
+         .and_then(|x| Some(x.name(&locales)?.into_owned()));
+@@ -120,6 +93,47 @@ fn get_desktop_entry<'a>(entries: &'a [DesktopEntry], id: &str) -> Option<&'a De
+     fde::find_app_by_id(entries, Ascii::new(id))
+ }
+ 
++/// Gather the capturable outputs (with a thumbnail) and toplevel windows, shared
++/// between the screencast dialog and the remote-desktop dialog.
++pub(crate) async fn gather_capture_sources(
++    wayland_helper: &WaylandHelper,
++    desktop_entries: &[DesktopEntry],
++) -> (
++    Vec<(WlOutput, OutputInfo, Option<widget::image::Handle>)>,
++    Vec<(ToplevelInfo, Option<String>)>,
++) {
++    let toplevels = wayland_helper
++        .toplevels()
++        .into_iter()
++        .map(|info| {
++            let icon = get_desktop_entry(desktop_entries, &info.app_id)
++                .and_then(|x| Some(x.icon()?.to_string()));
++            (info, icon)
++        })
++        .collect();
++
++    let mut outputs = Vec::new();
++    for output in wayland_helper.outputs() {
++        let Some(info) = wayland_helper.output_info(&output) else {
++            continue;
++        };
++        let source = CaptureSource::Output(output.clone());
++        let image = wayland_helper
++            .capture_source_shm(source, false)
++            .await
++            .and_then(|image| image.image_transformed().ok())
++            .map(|image| {
++                widget::image::Handle::from_rgba(image.width(), image.height(), image.into_vec())
++            });
++        outputs.push((output, info, image));
++    }
++
++    // Order outputs by their position in the display arrangement
++    outputs.sort_by_key(|(_, info, _)| info.logical_position.unwrap_or((i32::MAX, i32::MAX)));
++
++    (outputs, toplevels)
++}
++
+ fn create_dialog() -> cosmic::Task<crate::app::Msg> {
+     get_layer_surface(SctkLayerSurfaceSettings {
+         id: *SCREENCAST_ID,
+@@ -132,7 +146,7 @@ fn create_dialog() -> cosmic::Task<crate::app::Msg> {
+ }
+ 
+ #[derive(Clone, Copy, Debug)]
+-enum Tab {
++pub(crate) enum Tab {
+     Outputs,
+     Windows,
+ }
+@@ -176,6 +190,28 @@ impl CaptureSources {
+         self.outputs.clear();
+         self.toplevels.clear();
+     }
++
++    pub fn toggle_output(&mut self, output: WlOutput, multiple: bool) {
++        if let Some(idx) = self.outputs.iter().position(|x| x == &output) {
++            self.outputs.remove(idx);
++        } else {
++            if !multiple && !self.is_empty() {
++                self.clear();
++            }
++            self.outputs.push(output);
++        }
++    }
++
++    pub fn toggle_toplevel(&mut self, toplevel: ExtForeignToplevelHandleV1, multiple: bool) {
++        if let Some(idx) = self.toplevels.iter().position(|t| t == &toplevel) {
++            self.toplevels.remove(idx);
++        } else {
++            if !multiple && !self.is_empty() {
++                self.clear();
++            }
++            self.toplevels.push(toplevel);
++        }
++    }
+ }
+ 
+ #[derive(Clone, Debug)]
+@@ -187,8 +223,127 @@ pub enum Msg {
+     Cancel,
+ }
+ 
+-fn active_tab(portal: &CosmicPortal) -> Tab {
+-    *portal.screencast_tab_model.active_data::<Tab>().unwrap()
++pub(crate) fn active_tab(
++    tab_model: &widget::segmented_button::Model<widget::segmented_button::SingleSelect>,
++) -> Tab {
++    tab_model
++        .active_data::<Tab>()
++        .copied()
++        .unwrap_or(Tab::Outputs)
++}
++
++/// The shared source-picker control: a tab bar plus, for the active tab, the
++/// outputs laid out by display arrangement or the list of windows. Generic over
++/// the dialog's message type so both the screencast and remote-desktop dialogs
++/// can reuse it.
++pub(crate) fn sources_view<'a, M, FTab, FOut, FTop>(
++    tab_model: &'a widget::segmented_button::Model<widget::segmented_button::SingleSelect>,
++    outputs: &'a [(WlOutput, OutputInfo, Option<widget::image::Handle>)],
++    toplevels: &'a [(ToplevelInfo, Option<String>)],
++    selected: &'a CaptureSources,
++    on_tab: FTab,
++    on_output: FOut,
++    on_toplevel: FTop,
++) -> cosmic::Element<'a, M>
++where
++    M: Clone + 'static,
++    FTab: Fn(widget::segmented_button::Entity) -> M + 'static,
++    FOut: Fn(WlOutput) -> M,
++    FTop: Fn(ExtForeignToplevelHandleV1) -> M,
++{
++    let tabs = widget::tab_bar::horizontal(tab_model).on_activate(on_tab);
++
++    let list: cosmic::Element<M> = match active_tab(tab_model) {
++        Tab::Outputs => {
++            // Position each output to match the display arrangement (as in the
++            // cosmic-settings display page), scaled to fit the dialog.
++            let geometry = |info: &OutputInfo| {
++                let (x, y) = info.logical_position.unwrap_or((0, 0));
++                let (w, h) = info.logical_size.unwrap_or((1920, 1080));
++                (x, y, w.max(1), h.max(1))
++            };
++
++            let (mut min_x, mut min_y) = (i32::MAX, i32::MAX);
++            let (mut max_x, mut max_y) = (i32::MIN, i32::MIN);
++            for (_, info, _) in outputs {
++                let (x, y, w, h) = geometry(info);
++                min_x = min_x.min(x);
++                min_y = min_y.min(y);
++                max_x = max_x.max(x + w);
++                max_y = max_y.max(y + h);
++            }
++            let bbox_w = (max_x - min_x).max(1) as f32;
++            let bbox_h = (max_y - min_y).max(1) as f32;
++
++            // Scale the arrangement to fit a target area, and inset each region so
++            // adjacent screens have a gap.
++            const TARGET_W: f32 = 520.0;
++            const TARGET_H: f32 = 320.0;
++            const GAP: f32 = 6.0;
++            let scale = (TARGET_W / bbox_w).min(TARGET_H / bbox_h);
++
++            let mut children = Vec::new();
++            let mut regions = Vec::new();
++            let mut labels = Vec::new();
++            let mut selected_flags = Vec::new();
++            for (output, info, image) in outputs {
++                let (x, y, w, h) = geometry(info);
++                let region = iced::core::Rectangle {
++                    x: (x - min_x) as f32 * scale + GAP / 2.0,
++                    y: (y - min_y) as f32 * scale + GAP / 2.0,
++                    width: (w as f32 * scale - GAP).max(1.0),
++                    height: (h as f32 * scale - GAP).max(1.0),
++                };
++                let is_selected = selected.outputs.contains(output);
++                children.push(output_thumb_button(
++                    is_selected,
++                    image.as_ref(),
++                    region.width,
++                    region.height,
++                    on_output(output.clone()),
++                ));
++                labels.push(info.name.clone().unwrap_or_default());
++                selected_flags.push(is_selected);
++                regions.push(region);
++            }
++
++            let total = iced::core::Size::new(bbox_w * scale, bbox_h * scale);
++            crate::widget::output_arrangement::OutputArrangement::new(
++                children,
++                regions,
++                labels,
++                selected_flags,
++                total,
++            )
++            .into()
++        }
++        Tab::Windows => {
++            let mut list = widget::ListColumn::new();
++            for (toplevel_info, icon) in toplevels {
++                let icon = IconSource::from_unknown(icon.as_deref().unwrap_or_default());
++                let label = &toplevel_info.title;
++                let is_selected = selected.toplevels.contains(&toplevel_info.foreign_toplevel);
++                list = list.add(toplevel_button(
++                    label,
++                    is_selected,
++                    icon,
++                    on_toplevel(toplevel_info.foreign_toplevel.clone()),
++                ));
++            }
++            if toplevels.len() > 8 {
++                widget::container(cosmic::widget::scrollable(list))
++                    .max_height(380.)
++                    .width(iced::Length::Fill)
++                    .into()
++            } else {
++                list.into()
++            }
++        }
++    };
++
++    widget::column::with_children(vec![tabs.into(), list])
++        .spacing(8)
++        .into()
+ }
+ 
+ pub fn update_msg(portal: &mut CosmicPortal, msg: Msg) -> cosmic::Task<crate::app::Msg> {
+@@ -201,34 +356,11 @@ pub fn update_msg(portal: &mut CosmicPortal, msg: Msg) -> cosmic::Task<crate::ap
+             portal.screencast_tab_model.activate(tab);
+         }
+         Msg::SelectOutput(output) => {
+-            if let Some(idx) = args
+-                .capture_sources
+-                .outputs
+-                .iter()
+-                .position(|x| x == &output)
+-            {
+-                args.capture_sources.outputs.remove(idx);
+-            } else {
+-                if !args.multiple && !args.capture_sources.is_empty() {
+-                    args.capture_sources.clear();
+-                }
+-                args.capture_sources.outputs.push(output);
+-            }
++            args.capture_sources.toggle_output(output, args.multiple);
+         }
+         Msg::SelectToplevel(toplevel) => {
+-            if let Some(idx) = args
+-                .capture_sources
+-                .toplevels
+-                .iter()
+-                .position(|t| t == &toplevel)
+-            {
+-                args.capture_sources.toplevels.remove(idx);
+-            } else {
+-                if !args.multiple && !args.capture_sources.is_empty() {
+-                    args.capture_sources.clear();
+-                }
+-                args.capture_sources.toplevels.push(toplevel);
+-            }
++            args.capture_sources
++                .toggle_toplevel(toplevel, args.multiple);
+         }
+         Msg::Share => {
+             if let Some(mut args) = portal.screencast_args.take() {
+@@ -313,14 +445,14 @@ fn output_button_appearance(
+     appearance
+ }
+ 
+-fn output_thumb_button<'a>(
++fn output_thumb_button<'a, M: Clone + 'static>(
+     is_selected: bool,
+     image_handle: Option<&'a widget::image::Handle>,
+     width: f32,
+     height: f32,
+-    msg: Msg,
+-) -> cosmic::Element<'a, Msg> {
+-    let content: cosmic::Element<'a, Msg> = match image_handle {
++    msg: M,
++) -> cosmic::Element<'a, M> {
++    let content: cosmic::Element<'a, M> = match image_handle {
+         Some(image_handle) => widget::image::Image::new(image_handle.clone())
+             .width(iced::Length::Fill)
+             .height(iced::Length::Fill)
+@@ -353,12 +485,12 @@ fn output_thumb_button<'a>(
+         .into()
+ }
+ 
+-fn toplevel_button(
+-    label: &str,
++fn toplevel_button<'a, M: Clone + 'static>(
++    label: &'a str,
+     is_selected: bool,
+     icon: IconSource,
+-    msg: Msg,
+-) -> cosmic::Element<'_, Msg> {
++    msg: M,
++) -> cosmic::Element<'a, M> {
+     let text = widget::text(label).class(theme::style::Text::Custom(|theme| {
+         let container = theme.current_container();
+         iced::core::widget::text::Style {
+@@ -397,100 +529,18 @@ pub(crate) fn view(portal: &CosmicPortal) -> cosmic::Element<'_, Msg> {
+         share_button = share_button.on_press(Msg::Share);
+     }
+ 
+-    let tabs =
+-        widget::tab_bar::horizontal(&portal.screencast_tab_model).on_activate(Msg::ActivateTab);
+-
+-    let list: cosmic::Element<_> = match active_tab(portal) {
+-        Tab::Outputs => {
+-            // Position each output to match the display arrangement (as in the
+-            // cosmic-settings display page), scaled to fit the dialog.
+-            let geometry = |info: &OutputInfo| {
+-                let (x, y) = info.logical_position.unwrap_or((0, 0));
+-                let (w, h) = info.logical_size.unwrap_or((1920, 1080));
+-                (x, y, w.max(1), h.max(1))
+-            };
+-
+-            let (mut min_x, mut min_y) = (i32::MAX, i32::MAX);
+-            let (mut max_x, mut max_y) = (i32::MIN, i32::MIN);
+-            for (_, info, _) in &args.outputs {
+-                let (x, y, w, h) = geometry(info);
+-                min_x = min_x.min(x);
+-                min_y = min_y.min(y);
+-                max_x = max_x.max(x + w);
+-                max_y = max_y.max(y + h);
+-            }
+-            let bbox_w = (max_x - min_x).max(1) as f32;
+-            let bbox_h = (max_y - min_y).max(1) as f32;
+-
+-            // Scale the arrangement to fit a target area, and inset each region so
+-            // adjacent screens have a gap.
+-            const TARGET_W: f32 = 520.0;
+-            const TARGET_H: f32 = 320.0;
+-            const GAP: f32 = 6.0;
+-            let scale = (TARGET_W / bbox_w).min(TARGET_H / bbox_h);
+-
+-            let mut children = Vec::new();
+-            let mut regions = Vec::new();
+-            let mut labels = Vec::new();
+-            let mut selected = Vec::new();
+-            for (output, info, image) in &args.outputs {
+-                let (x, y, w, h) = geometry(info);
+-                let region = iced::core::Rectangle {
+-                    x: (x - min_x) as f32 * scale + GAP / 2.0,
+-                    y: (y - min_y) as f32 * scale + GAP / 2.0,
+-                    width: (w as f32 * scale - GAP).max(1.0),
+-                    height: (h as f32 * scale - GAP).max(1.0),
+-                };
+-                let is_selected = args.capture_sources.outputs.contains(output);
+-                children.push(output_thumb_button(
+-                    is_selected,
+-                    image.as_ref(),
+-                    region.width,
+-                    region.height,
+-                    Msg::SelectOutput(output.clone()),
+-                ));
+-                labels.push(info.name.clone().unwrap_or_default());
+-                selected.push(is_selected);
+-                regions.push(region);
+-            }
+-
+-            let total = iced::core::Size::new(bbox_w * scale, bbox_h * scale);
+-            crate::widget::output_arrangement::OutputArrangement::new(
+-                children, regions, labels, selected, total,
+-            )
+-            .into()
+-        }
+-        Tab::Windows => {
+-            let mut list = widget::ListColumn::new();
+-            for (toplevel_info, icon) in &args.toplevels {
+-                let icon = IconSource::from_unknown(icon.as_deref().unwrap_or_default());
+-                let label = &toplevel_info.title;
+-                let is_selected = args
+-                    .capture_sources
+-                    .toplevels
+-                    .contains(&toplevel_info.foreign_toplevel);
+-                list = list.add(toplevel_button(
+-                    label,
+-                    is_selected,
+-                    icon,
+-                    Msg::SelectToplevel(toplevel_info.foreign_toplevel.clone()),
+-                ));
+-            }
+-            if args.toplevels.len() > 8 {
+-                widget::container(cosmic::widget::scrollable(list))
+-                    .max_height(380.)
+-                    .width(iced::Length::Fill)
+-                    .into()
+-            } else {
+-                list.into()
+-            }
+-        }
+-    };
+-
+     let unknown = fl!("unknown-application");
+     let app_name = args.app_name.as_deref().unwrap_or(&unknown);
+ 
+-    let control = widget::column::with_children(vec![tabs.into(), list]).spacing(8);
++    let control = sources_view(
++        &portal.screencast_tab_model,
++        &args.outputs,
++        &args.toplevels,
++        &args.capture_sources,
++        Msg::ActivateTab,
++        Msg::SelectOutput,
++        Msg::SelectToplevel,
++    );
+     autosize::autosize(
+         KeyboardWrapper::new(
+             widget::dialog()
+
+From 5a9cf66a40cd90b76ab144b60497d8490a2c5d60 Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Tue, 16 Jun 2026 22:28:42 -0600
+Subject: [PATCH 08/11] feat(remote desktop): implement Notify* via ei sender
+
+---
+ Cargo.lock               |  14 ++
+ Cargo.toml               |   3 +-
+ src/main.rs              |   1 +
+ src/remote_desktop.rs    | 218 ++++++++++++++++++++++++++++-
+ src/remote_desktop_ei.rs | 286 +++++++++++++++++++++++++++++++++++++++
+ 5 files changed, 519 insertions(+), 3 deletions(-)
+ create mode 100644 src/remote_desktop_ei.rs
+
+diff --git a/Cargo.lock b/Cargo.lock
+index 3fe54802..c454f8fa 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -6424,6 +6424,19 @@ version = "0.8.11"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
+ 
++[[package]]
++name = "reis"
++version = "0.7.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "81f3fedd2777cde52c1be5e572efbec485eac7b801c47820eda388d4f13b9c4b"
++dependencies = [
++ "enumflags2",
++ "futures-util",
++ "log",
++ "rustix 1.1.4",
++ "tokio",
++]
++
+ [[package]]
+ name = "renderdoc-sys"
+ version = "1.1.0"
+@@ -9232,6 +9245,7 @@ dependencies = [
+  "pipewire",
+  "pipewire-sys",
+  "png 0.18.1",
++ "reis",
+  "rust-embed",
+  "rustix 1.1.4",
+  "serde",
+diff --git a/Cargo.toml b/Cargo.toml
+index 77c03977..afa0adaa 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -30,7 +30,8 @@ pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs", featur
+     "v0_3_33",
+ ] }
+ png = "0.18"
+-rustix = { version = "1.1", features = ["fs"] }
++reis = { version = "0.7", features = ["tokio"] }
++rustix = { version = "1.1", features = ["fs", "time"] }
+ # spa_sys = { package = "libspa-sys", git = "https://github.com/pop-os/pipewire-rs" }
+ zbus = { version = "5.15.0", default-features = false, features = ["tokio"] }
+ gbm = "0.18.0"
+diff --git a/src/main.rs b/src/main.rs
+index 2425eacc..8800fb32 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -15,6 +15,7 @@ mod file_chooser;
+ mod localize;
+ mod remote_desktop;
+ mod remote_desktop_dialog;
++mod remote_desktop_ei;
+ mod screencast;
+ mod screencast_dialog;
+ mod screencast_thread;
+diff --git a/src/remote_desktop.rs b/src/remote_desktop.rs
+index 0e124ca2..b681c1aa 100644
+--- a/src/remote_desktop.rs
++++ b/src/remote_desktop.rs
+@@ -1,7 +1,11 @@
+ use crate::screencast::{self, CaptureOutcome, SessionData, StreamProps};
+ use crate::wayland::WaylandHelper;
+-use crate::{PortalResponse, Request, Session, remote_desktop_dialog, subscription};
++use crate::{
++    PortalResponse, Request, Session, remote_desktop_dialog, remote_desktop_ei, subscription,
++};
++use remote_desktop_ei::{Command, EiSender};
+ use std::collections::HashMap;
++use std::os::unix::net::UnixStream;
+ use tokio::sync::mpsc::Sender;
+ use zbus::zvariant;
+ 
+@@ -22,6 +26,7 @@ pub(crate) struct RemoteDesktopData {
+     pub(crate) persist_mode: u32,
+     pub(crate) granted_persist_mode: u32,
+     pub(crate) screen_cast_enabled: bool,
++    pub(crate) ei_sender: Option<EiSender>,
+ }
+ 
+ impl Default for RemoteDesktopData {
+@@ -32,6 +37,7 @@ impl Default for RemoteDesktopData {
+             persist_mode: PERSIST_NONE,
+             granted_persist_mode: PERSIST_NONE,
+             screen_cast_enabled: false,
++            ei_sender: None,
+         }
+     }
+ }
+@@ -78,6 +84,56 @@ impl RemoteDesktop {
+     pub fn new(wayland_helper: WaylandHelper, tx: Sender<subscription::Event>) -> Self {
+         Self { wayland_helper, tx }
+     }
++
++    async fn ei_sender(
++        &self,
++        connection: &zbus::Connection,
++        session_handle: &zvariant::ObjectPath<'_>,
++    ) -> Option<EiSender> {
++        let interface = crate::session_interface::<SessionData>(connection, session_handle).await?;
++
++        let device_types = {
++            let session_data = interface.get().await;
++            let remote_desktop = session_data.remote_desktop.as_ref()?;
++            if let Some(sender) = remote_desktop.ei_sender.clone() {
++                return Some(sender);
++            }
++            remote_desktop.device_types
++        };
++
++        let proxy = CosmicCompEiProxy::new(connection).await.ok()?;
++        let fd = match proxy.get_sender_socket(device_types).await {
++            Ok(fd) => fd,
++            Err(err) => {
++                log::error!("Failed to get ei sender socket: {err}");
++                return None;
++            }
++        };
++        let stream = UnixStream::from(std::os::fd::OwnedFd::from(fd));
++        match EiSender::connect(stream, device_types).await {
++            Ok(sender) => {
++                if let Some(remote_desktop) = interface.get_mut().await.remote_desktop.as_mut() {
++                    remote_desktop.ei_sender = Some(sender.clone());
++                }
++                Some(sender)
++            }
++            Err(err) => {
++                log::error!("Failed to create remote desktop ei sender: {err}");
++                None
++            }
++        }
++    }
++
++    async fn notify(
++        &self,
++        connection: &zbus::Connection,
++        session_handle: &zvariant::ObjectPath<'_>,
++        command: Command,
++    ) {
++        if let Some(sender) = self.ei_sender(connection, session_handle).await {
++            sender.send(command);
++        }
++    }
+ }
+ 
+ #[zbus::interface(name = "org.freedesktop.impl.portal.RemoteDesktop")]
+@@ -253,7 +309,165 @@ impl RemoteDesktop {
+             .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to connect to EIS: {e}")))
+     }
+ 
+-    // TODO: Notify*
++    // Notify* for legacy clients that don't use ConnectToEIS.
++
++    async fn notify_pointer_motion(
++        &self,
++        #[zbus(connection)] connection: &zbus::Connection,
++        session_handle: zvariant::ObjectPath<'_>,
++        _options: HashMap<String, zvariant::OwnedValue>,
++        dx: f64,
++        dy: f64,
++    ) {
++        self.notify(
++            connection,
++            &session_handle,
++            Command::PointerMotion { dx, dy },
++        )
++        .await;
++    }
++
++    async fn notify_pointer_motion_absolute(
++        &self,
++        #[zbus(connection)] connection: &zbus::Connection,
++        session_handle: zvariant::ObjectPath<'_>,
++        _options: HashMap<String, zvariant::OwnedValue>,
++        _stream: u32,
++        x: f64,
++        y: f64,
++    ) {
++        self.notify(
++            connection,
++            &session_handle,
++            Command::PointerMotionAbsolute { x, y },
++        )
++        .await;
++    }
++
++    async fn notify_pointer_button(
++        &self,
++        #[zbus(connection)] connection: &zbus::Connection,
++        session_handle: zvariant::ObjectPath<'_>,
++        _options: HashMap<String, zvariant::OwnedValue>,
++        button: i32,
++        state: u32,
++    ) {
++        self.notify(
++            connection,
++            &session_handle,
++            Command::PointerButton { button, state },
++        )
++        .await;
++    }
++
++    async fn notify_pointer_axis(
++        &self,
++        #[zbus(connection)] connection: &zbus::Connection,
++        session_handle: zvariant::ObjectPath<'_>,
++        _options: HashMap<String, zvariant::OwnedValue>,
++        dx: f64,
++        dy: f64,
++    ) {
++        self.notify(connection, &session_handle, Command::PointerAxis { dx, dy })
++            .await;
++    }
++
++    async fn notify_pointer_axis_discrete(
++        &self,
++        #[zbus(connection)] connection: &zbus::Connection,
++        session_handle: zvariant::ObjectPath<'_>,
++        _options: HashMap<String, zvariant::OwnedValue>,
++        axis: u32,
++        steps: i32,
++    ) {
++        self.notify(
++            connection,
++            &session_handle,
++            Command::PointerAxisDiscrete { axis, steps },
++        )
++        .await;
++    }
++
++    async fn notify_keyboard_keycode(
++        &self,
++        #[zbus(connection)] connection: &zbus::Connection,
++        session_handle: zvariant::ObjectPath<'_>,
++        _options: HashMap<String, zvariant::OwnedValue>,
++        keycode: i32,
++        state: u32,
++    ) {
++        self.notify(
++            connection,
++            &session_handle,
++            Command::KeyboardKeycode { keycode, state },
++        )
++        .await;
++    }
++
++    async fn notify_keyboard_keysym(
++        &self,
++        #[zbus(connection)] connection: &zbus::Connection,
++        session_handle: zvariant::ObjectPath<'_>,
++        _options: HashMap<String, zvariant::OwnedValue>,
++        keysym: i32,
++        state: u32,
++    ) {
++        self.notify(
++            connection,
++            &session_handle,
++            Command::KeyboardKeysym { keysym, state },
++        )
++        .await;
++    }
++
++    #[allow(clippy::too_many_arguments)] // signature fixed by the portal protocol
++    async fn notify_touch_down(
++        &self,
++        #[zbus(connection)] connection: &zbus::Connection,
++        session_handle: zvariant::ObjectPath<'_>,
++        _options: HashMap<String, zvariant::OwnedValue>,
++        _stream: u32,
++        slot: u32,
++        x: f64,
++        y: f64,
++    ) {
++        self.notify(
++            connection,
++            &session_handle,
++            Command::TouchDown { slot, x, y },
++        )
++        .await;
++    }
++
++    #[allow(clippy::too_many_arguments)] // signature fixed by the portal protocol
++    async fn notify_touch_motion(
++        &self,
++        #[zbus(connection)] connection: &zbus::Connection,
++        session_handle: zvariant::ObjectPath<'_>,
++        _options: HashMap<String, zvariant::OwnedValue>,
++        _stream: u32,
++        slot: u32,
++        x: f64,
++        y: f64,
++    ) {
++        self.notify(
++            connection,
++            &session_handle,
++            Command::TouchMotion { slot, x, y },
++        )
++        .await;
++    }
++
++    async fn notify_touch_up(
++        &self,
++        #[zbus(connection)] connection: &zbus::Connection,
++        session_handle: zvariant::ObjectPath<'_>,
++        _options: HashMap<String, zvariant::OwnedValue>,
++        slot: u32,
++    ) {
++        self.notify(connection, &session_handle, Command::TouchUp { slot })
++            .await;
++    }
+ 
+     #[zbus(property)]
+     async fn available_device_types(&self) -> u32 {
+diff --git a/src/remote_desktop_ei.rs b/src/remote_desktop_ei.rs
+new file mode 100644
+index 00000000..0e3e4816
+--- /dev/null
++++ b/src/remote_desktop_ei.rs
+@@ -0,0 +1,286 @@
++//! Implements the legacy Notify* input-injection path for RemoteDesktop.
++//! cosmic-comp has no Notify* DBus API, so we connect as an ei sender instead.
++
++use std::collections::HashMap;
++use std::os::unix::net::UnixStream;
++
++use ashpd::enumflags2::BitFlags;
++use futures::StreamExt;
++use reis::ei;
++use reis::event::{Device, DeviceCapability, EiEvent};
++use rustix::time::{ClockId, clock_gettime};
++use tokio::sync::mpsc;
++
++use crate::remote_desktop::{DEVICE_KEYBOARD, DEVICE_POINTER, DEVICE_TOUCHSCREEN};
++
++#[derive(Debug)]
++pub enum Command {
++    PointerMotion { dx: f64, dy: f64 },
++    PointerMotionAbsolute { x: f64, y: f64 },
++    PointerButton { button: i32, state: u32 },
++    PointerAxis { dx: f64, dy: f64 },
++    PointerAxisDiscrete { axis: u32, steps: i32 },
++    KeyboardKeycode { keycode: i32, state: u32 },
++    KeyboardKeysym { keysym: i32, state: u32 },
++    TouchDown { slot: u32, x: f64, y: f64 },
++    TouchMotion { slot: u32, x: f64, y: f64 },
++    TouchUp { slot: u32 },
++}
++
++#[derive(Clone)]
++pub struct EiSender {
++    tx: mpsc::Sender<Command>,
++}
++
++impl EiSender {
++    // reis's event stream is !Send so we run the loop on its own thread
++    pub async fn connect(stream: UnixStream, device_types: u32) -> std::io::Result<Self> {
++        let (tx, rx) = mpsc::channel(64);
++        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
++        std::thread::Builder::new()
++            .name("xdpc-ei-sender".to_owned())
++            .spawn(move || {
++                let runtime = match tokio::runtime::Builder::new_current_thread()
++                    .enable_io()
++                    .build()
++                {
++                    Ok(runtime) => runtime,
++                    Err(err) => {
++                        let _ = ready_tx.send(Err(err));
++                        return;
++                    }
++                };
++                runtime.block_on(async move {
++                    let connect = async {
++                        let context = ei::Context::new(stream)?;
++                        context
++                            .handshake_tokio(
++                                "xdg-desktop-portal-cosmic",
++                                ei::handshake::ContextType::Sender,
++                            )
++                            .await
++                            .map_err(|err| {
++                                std::io::Error::other(format!("ei handshake failed: {err}"))
++                            })
++                    };
++                    match connect.await {
++                        Ok((connection, events)) => {
++                            let _ = ready_tx.send(Ok(()));
++                            run(connection, events, capabilities_for(device_types), rx).await;
++                        }
++                        Err(err) => {
++                            let _ = ready_tx.send(Err(err));
++                        }
++                    }
++                });
++            })?;
++        ready_rx
++            .await
++            .map_err(|_| std::io::Error::other("ei sender thread exited"))??;
++        Ok(Self { tx })
++    }
++
++    pub fn send(&self, command: Command) {
++        if let Err(err) = self.tx.try_send(command) {
++            log::warn!("Failed to queue remote desktop input event: {err}");
++        }
++    }
++}
++
++fn capabilities_for(device_types: u32) -> BitFlags<DeviceCapability> {
++    let mut caps = BitFlags::empty();
++    if device_types & DEVICE_KEYBOARD != 0 {
++        caps.insert(DeviceCapability::Keyboard);
++        // `Text` carries keysym injection, used by NotifyKeyboardKeysym.
++        caps.insert(DeviceCapability::Text);
++    }
++    if device_types & DEVICE_POINTER != 0 {
++        caps.insert(DeviceCapability::Pointer);
++        caps.insert(DeviceCapability::PointerAbsolute);
++        caps.insert(DeviceCapability::Button);
++        caps.insert(DeviceCapability::Scroll);
++    }
++    if device_types & DEVICE_TOUCHSCREEN != 0 {
++        caps.insert(DeviceCapability::Touch);
++    }
++    caps
++}
++
++struct DeviceState {
++    emulating: bool,
++    sequence: u32,
++}
++
++struct State {
++    connection: reis::event::Connection,
++    caps: BitFlags<DeviceCapability>,
++    devices: HashMap<Device, DeviceState>,
++}
++
++async fn run(
++    connection: reis::event::Connection,
++    mut events: reis::tokio::EiConvertEventStream,
++    caps: BitFlags<DeviceCapability>,
++    mut rx: mpsc::Receiver<Command>,
++) {
++    let mut state = State {
++        connection,
++        caps,
++        devices: HashMap::new(),
++    };
++    loop {
++        tokio::select! {
++            event = events.next() => match event {
++                Some(Ok(event)) => state.handle_event(event),
++                Some(Err(err)) => {
++                    log::warn!("Remote desktop ei event stream error: {err}");
++                    break;
++                }
++                None => break,
++            },
++            command = rx.recv() => match command {
++                Some(command) => state.handle_command(command),
++                None => break,
++            },
++        }
++    }
++    log::debug!("Remote desktop ei sender task ended");
++}
++
++impl State {
++    fn handle_event(&mut self, event: EiEvent) {
++        match event {
++            EiEvent::SeatAdded(evt) => {
++                evt.seat.bind_capabilities(self.caps);
++                let _ = self.connection.flush();
++            }
++            EiEvent::DeviceAdded(evt) => {
++                self.devices.insert(
++                    evt.device,
++                    DeviceState {
++                        emulating: false,
++                        sequence: 0,
++                    },
++                );
++            }
++            EiEvent::DeviceResumed(evt) => {
++                let serial = self.connection.serial();
++                if let Some(state) = self.devices.get_mut(&evt.device) {
++                    evt.device.device().start_emulating(serial, state.sequence);
++                    state.sequence = state.sequence.wrapping_add(1);
++                    state.emulating = true;
++                    let _ = self.connection.flush();
++                }
++            }
++            EiEvent::DevicePaused(evt) => {
++                if let Some(state) = self.devices.get_mut(&evt.device) {
++                    state.emulating = false;
++                }
++            }
++            EiEvent::DeviceRemoved(evt) => {
++                self.devices.remove(&evt.device);
++            }
++            _ => {}
++        }
++    }
++
++    fn emit<T: ei::Interface, F: FnOnce(&T)>(&self, serial: u32, time: u64, f: F) {
++        for (device, state) in &self.devices {
++            if !state.emulating {
++                continue;
++            }
++            if let Some(interface) = device.interface::<T>() {
++                f(&interface);
++                device.device().frame(serial, time);
++                return;
++            }
++        }
++        log::debug!("No emulating remote desktop device for {}", T::NAME);
++    }
++
++    fn handle_command(&self, command: Command) {
++        let serial = self.connection.serial();
++        let time = monotonic_micros();
++        match command {
++            Command::PointerMotion { dx, dy } => {
++                self.emit::<ei::Pointer, _>(serial, time, |p| {
++                    p.motion_relative(dx as f32, dy as f32);
++                });
++            }
++            // `stream` (which output) is ignored for now; treat as a single space.
++            Command::PointerMotionAbsolute { x, y } => {
++                self.emit::<ei::PointerAbsolute, _>(serial, time, |p| {
++                    p.motion_absolute(x as f32, y as f32);
++                });
++            }
++            Command::PointerButton { button, state } => {
++                self.emit::<ei::Button, _>(serial, time, |b| {
++                    b.button(button as u32, button_state(state));
++                });
++            }
++            Command::PointerAxis { dx, dy } => {
++                self.emit::<ei::Scroll, _>(serial, time, |s| {
++                    s.scroll(dx as f32, dy as f32);
++                });
++            }
++            Command::PointerAxisDiscrete { axis, steps } => {
++                // axis 0 = vertical, 1 = horizontal; ei uses 120 units per detent.
++                let (x, y) = if axis == 0 {
++                    (0, steps.saturating_mul(120))
++                } else {
++                    (steps.saturating_mul(120), 0)
++                };
++                self.emit::<ei::Scroll, _>(serial, time, |s| {
++                    s.scroll_discrete(x, y);
++                });
++            }
++            Command::KeyboardKeycode { keycode, state } => {
++                self.emit::<ei::Keyboard, _>(serial, time, |k| {
++                    k.key(keycode as u32, key_state(state));
++                });
++            }
++            Command::KeyboardKeysym { keysym, state } => {
++                self.emit::<ei::Text, _>(serial, time, |t| {
++                    t.keysym(keysym as u32, key_state(state));
++                });
++            }
++            Command::TouchDown { slot, x, y } => {
++                self.emit::<ei::Touchscreen, _>(serial, time, |t| {
++                    t.down(slot, x as f32, y as f32);
++                });
++            }
++            Command::TouchMotion { slot, x, y } => {
++                self.emit::<ei::Touchscreen, _>(serial, time, |t| {
++                    t.motion(slot, x as f32, y as f32);
++                });
++            }
++            Command::TouchUp { slot } => {
++                self.emit::<ei::Touchscreen, _>(serial, time, |t| {
++                    t.up(slot);
++                });
++            }
++        }
++        let _ = self.connection.flush();
++    }
++}
++
++fn button_state(state: u32) -> ei::button::ButtonState {
++    if state == 0 {
++        ei::button::ButtonState::Released
++    } else {
++        ei::button::ButtonState::Press
++    }
++}
++
++fn key_state(state: u32) -> ei::keyboard::KeyState {
++    if state == 0 {
++        ei::keyboard::KeyState::Released
++    } else {
++        ei::keyboard::KeyState::Press
++    }
++}
++
++fn monotonic_micros() -> u64 {
++    let t = clock_gettime(ClockId::Monotonic);
++    t.tv_sec as u64 * 1_000_000 + t.tv_nsec as u64 / 1_000
++}
+
+From 45065c9600337f3fc9f5a36eac4f3ff6072181c6 Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Fri, 19 Jun 2026 09:42:34 -0600
+Subject: [PATCH 09/11] feat: persist and restore sessions via restore_data
+
+---
+ src/remote_desktop.rs | 166 ++++++++++++++++++++++++++++++++++--------
+ src/screencast.rs     |  53 +++++++++-----
+ 2 files changed, 171 insertions(+), 48 deletions(-)
+
+diff --git a/src/remote_desktop.rs b/src/remote_desktop.rs
+index b681c1aa..e5099cef 100644
+--- a/src/remote_desktop.rs
++++ b/src/remote_desktop.rs
+@@ -1,4 +1,6 @@
+-use crate::screencast::{self, CaptureOutcome, SessionData, StreamProps};
++use crate::screencast::{
++    self, CaptureOutcome, PersistedCaptureSources, RestoreData, SessionData, StreamProps,
++};
+ use crate::wayland::WaylandHelper;
+ use crate::{
+     PortalResponse, Request, Session, remote_desktop_dialog, remote_desktop_ei, subscription,
+@@ -26,6 +28,7 @@ pub(crate) struct RemoteDesktopData {
+     pub(crate) persist_mode: u32,
+     pub(crate) granted_persist_mode: u32,
+     pub(crate) screen_cast_enabled: bool,
++    restore: Option<PersistedRemoteDesktop>,
+     pub(crate) ei_sender: Option<EiSender>,
+ }
+ 
+@@ -37,11 +40,48 @@ impl Default for RemoteDesktopData {
+             persist_mode: PERSIST_NONE,
+             granted_persist_mode: PERSIST_NONE,
+             screen_cast_enabled: false,
++            restore: None,
+             ei_sender: None,
+         }
+     }
+ }
+ 
++/// Private payload of a RemoteDesktop `("COSMIC", 1, _)` restore blob.
++struct PersistedRemoteDesktop {
++    device_types: u32,
++    clipboard_enabled: bool,
++    screen_cast_enabled: bool,
++    sources: PersistedCaptureSources,
++}
++
++impl From<PersistedRemoteDesktop> for RestoreData {
++    fn from(p: PersistedRemoteDesktop) -> RestoreData {
++        RestoreData::cosmic_v1(zvariant::Structure::from((
++            p.device_types,
++            p.clipboard_enabled,
++            p.screen_cast_enabled,
++            p.sources.outputs,
++            p.sources.toplevels,
++        )))
++    }
++}
++
++impl TryFrom<&RestoreData> for PersistedRemoteDesktop {
++    type Error = ();
++    fn try_from(restore_data: &RestoreData) -> Result<Self, ()> {
++        let data = restore_data.cosmic_v1_data().ok_or(())?;
++        let structure = zvariant::Structure::try_from(&**data).map_err(|_| ())?;
++        let (device_types, clipboard_enabled, screen_cast_enabled, outputs, toplevels) =
++            structure.try_into().map_err(|_| ())?;
++        Ok(PersistedRemoteDesktop {
++            device_types,
++            clipboard_enabled,
++            screen_cast_enabled,
++            sources: PersistedCaptureSources { outputs, toplevels },
++        })
++    }
++}
++
+ #[derive(zvariant::SerializeDict, zvariant::Type)]
+ #[zvariant(signature = "a{sv}")]
+ struct CreateSessionResult {
+@@ -53,7 +93,7 @@ struct CreateSessionResult {
+ struct SelectDevicesOptions {
+     // Default: all
+     types: Option<u32>,
+-    restore_data: Option<(String, u32, zvariant::OwnedValue)>,
++    restore_data: Option<RestoreData>,
+     // Default: 0
+     persist_mode: Option<u32>,
+ }
+@@ -64,6 +104,8 @@ struct StartResult {
+     devices: u32,
+     clipboard_enabled: bool,
+     streams: Vec<(u32, StreamProps)>,
++    persist_mode: u32,
++    restore_data: Option<RestoreData>,
+ }
+ 
+ #[zbus::proxy(
+@@ -180,7 +222,10 @@ impl RemoteDesktop {
+         };
+         remote_desktop.device_types = options.types.unwrap_or(ALL_DEVICE_TYPES) & ALL_DEVICE_TYPES;
+         remote_desktop.persist_mode = options.persist_mode.unwrap_or(PERSIST_NONE);
+-        // TODO: restore_data
++        remote_desktop.restore = options
++            .restore_data
++            .as_ref()
++            .and_then(|restore_data| PersistedRemoteDesktop::try_from(restore_data).ok());
+         PortalResponse::Success(HashMap::new())
+     }
+ 
+@@ -202,6 +247,14 @@ impl RemoteDesktop {
+                 return PortalResponse::Other;
+             };
+ 
++            let restore_consent = {
++                let mut session_data = interface.get_mut().await;
++                let Some(remote_desktop) = session_data.remote_desktop.as_mut() else {
++                    return PortalResponse::Other;
++                };
++                remote_desktop.restore.take()
++            };
++
+             let (
+                 device_types,
+                 clipboard_enabled,
+@@ -229,51 +282,106 @@ impl RemoteDesktop {
+                 return PortalResponse::Other;
+             }
+ 
+-            let resp = remote_desktop_dialog::show_remote_desktop_prompt(
+-                &self.tx,
+-                &session_handle,
+-                app_id,
+-                device_types,
+-                persist_mode,
+-                screen_cast_enabled,
+-                multiple,
+-                source_types,
+-                &self.wayland_helper,
+-            )
+-            .await;
+-            let Some(response) = resp else {
+-                return PortalResponse::Cancelled;
++            // Restore silently only if the prior consent still matches this
++            // request: the same device set, the same screen-sharing intent, and
++            // the saved monitors/windows still resolve. Otherwise re-prompt.
++            let restored = match &restore_consent {
++                Some(consent) => {
++                    consent.device_types & ALL_DEVICE_TYPES == device_types
++                        && consent.screen_cast_enabled == screen_cast_enabled
++                        && (!screen_cast_enabled || consent.sources.resolves(&self.wayland_helper))
++                }
++                None => false,
++            };
++
++            // Replay the consented sources so `capture` skips its own picker too.
++            if restored
++                && screen_cast_enabled
++                && let Some(consent) = &restore_consent
++            {
++                interface.get_mut().await.persisted_capture_sources = Some(consent.sources.clone());
++            }
++
++            let response = if restored {
++                None
++            } else {
++                match remote_desktop_dialog::show_remote_desktop_prompt(
++                    &self.tx,
++                    &session_handle,
++                    app_id.clone(),
++                    device_types,
++                    persist_mode,
++                    screen_cast_enabled,
++                    multiple,
++                    source_types,
++                    &self.wayland_helper,
++                )
++                .await
++                {
++                    Some(response) => Some(response),
++                    None => return PortalResponse::Cancelled,
++                }
+             };
+ 
+             if interface.get().await.closed {
+                 return PortalResponse::Cancelled;
+             }
++
++            let granted_persist_mode = response.as_ref().map_or(persist_mode, |r| r.persist_mode);
+             if let Some(remote_desktop) = interface.get_mut().await.remote_desktop.as_mut() {
+-                remote_desktop.granted_persist_mode = response.persist_mode;
++                remote_desktop.granted_persist_mode = granted_persist_mode;
+             }
+ 
+             // Reuse the ScreenCast.Start capture path; streams are returned here.
+-            let streams = if screen_cast_enabled {
+-                match screencast::capture_from_sources(
+-                    connection,
+-                    &self.wayland_helper,
+-                    &session_handle,
+-                    response.capture_sources,
+-                )
+-                .await
+-                {
+-                    CaptureOutcome::Success(result) => result.streams,
++            let (streams, sources) = if screen_cast_enabled {
++                let outcome = match response {
++                    Some(response) => {
++                        screencast::capture_from_sources(
++                            connection,
++                            &self.wayland_helper,
++                            &session_handle,
++                            response.capture_sources,
++                        )
++                        .await
++                    }
++                    None => {
++                        screencast::capture(
++                            connection,
++                            &self.wayland_helper,
++                            &self.tx,
++                            &session_handle,
++                            app_id,
++                        )
++                        .await
++                    }
++                };
++                match outcome {
++                    CaptureOutcome::Success(result) => {
++                        (result.streams, result.sources.unwrap_or_default())
++                    }
+                     CaptureOutcome::Cancelled => return PortalResponse::Cancelled,
+                     CaptureOutcome::Other => return PortalResponse::Other,
+                 }
+             } else {
+-                Vec::new()
++                (Vec::new(), PersistedCaptureSources::default())
+             };
+ 
++            let restore_data = (granted_persist_mode != PERSIST_NONE).then(|| {
++                PersistedRemoteDesktop {
++                    device_types,
++                    clipboard_enabled,
++                    screen_cast_enabled,
++                    sources,
++                }
++                .into()
++            });
++
+             PortalResponse::Success(StartResult {
+                 devices: device_types,
+                 clipboard_enabled,
+                 streams,
++                persist_mode: granted_persist_mode,
++                restore_data,
+             })
+         })
+         .await
+diff --git a/src/screencast.rs b/src/screencast.rs
+index cc42ae53..5a1aaada 100644
+--- a/src/screencast.rs
++++ b/src/screencast.rs
+@@ -28,14 +28,14 @@ struct CreateSessionResult {
+     session_id: String,
+ }
+ 
+-#[derive(Clone)]
+-struct PersistedCaptureSources {
+-    pub outputs: Vec<String>,
+-    pub toplevels: Vec<String>,
++#[derive(Clone, Default)]
++pub(crate) struct PersistedCaptureSources {
++    pub(crate) outputs: Vec<String>,
++    pub(crate) toplevels: Vec<String>,
+ }
+ 
+ impl PersistedCaptureSources {
+-    fn from_capture_sources(
++    pub(crate) fn from_capture_sources(
+         wayland_helper: &WaylandHelper,
+         sources: &CaptureSources,
+     ) -> Option<Self> {
+@@ -74,6 +74,11 @@ impl PersistedCaptureSources {
+ 
+         Some(CaptureSources { outputs, toplevels })
+     }
++
++    /// Whether every persisted output and window still maps to a live source.
++    pub(crate) fn resolves(&self, wayland_helper: &WaylandHelper) -> bool {
++        self.to_capture_sources(wayland_helper).is_some()
++    }
+ }
+ 
+ #[derive(Debug, serde::Serialize, serde::Deserialize, zvariant::Type)]
+@@ -84,28 +89,36 @@ pub(crate) struct RestoreData {
+     data: zvariant::OwnedValue,
+ }
+ 
+-impl From<PersistedCaptureSources> for RestoreData {
+-    fn from(sources: PersistedCaptureSources) -> RestoreData {
++impl RestoreData {
++    /// Wrap an implementation-private structure as a `("COSMIC", 1, v)` blob.
++    pub(crate) fn cosmic_v1(data: zvariant::Structure) -> Self {
+         RestoreData {
+             vendor: "COSMIC".to_string(),
+             version: 1,
+-            data: zvariant::Value::from(zvariant::Structure::from((
+-                sources.outputs,
+-                sources.toplevels,
+-            )))
+-            .try_to_owned()
+-            .unwrap(),
++            data: zvariant::Value::from(data).try_to_owned().unwrap(),
+         }
+     }
++
++    /// Return the private payload if this is a `("COSMIC", 1, _)` blob.
++    pub(crate) fn cosmic_v1_data(&self) -> Option<&zvariant::OwnedValue> {
++        ((&*self.vendor, self.version) == ("COSMIC", 1)).then_some(&self.data)
++    }
++}
++
++impl From<PersistedCaptureSources> for RestoreData {
++    fn from(sources: PersistedCaptureSources) -> RestoreData {
++        RestoreData::cosmic_v1(zvariant::Structure::from((
++            sources.outputs,
++            sources.toplevels,
++        )))
++    }
+ }
+ 
+ impl TryFrom<&RestoreData> for PersistedCaptureSources {
+     type Error = ();
+     fn try_from(restore_data: &RestoreData) -> Result<Self, ()> {
+-        if (&*restore_data.vendor, restore_data.version) != ("COSMIC", 1) {
+-            return Err(());
+-        }
+-        let structure = zvariant::Structure::try_from(&*restore_data.data).map_err(|_| ())?;
++        let data = restore_data.cosmic_v1_data().ok_or(())?;
++        let structure = zvariant::Structure::try_from(&**data).map_err(|_| ())?;
+         let (outputs, toplevels) = structure.try_into().map_err(|_| ())?;
+         Ok(PersistedCaptureSources { outputs, toplevels })
+     }
+@@ -150,7 +163,7 @@ pub(crate) struct SessionData {
+     cursor_mode: Option<u32>,
+     pub(crate) multiple: bool,
+     pub(crate) source_types: BitFlags<SourceType>,
+-    persisted_capture_sources: Option<PersistedCaptureSources>,
++    pub(crate) persisted_capture_sources: Option<PersistedCaptureSources>,
+     pub(crate) closed: bool,
+     pub(crate) remote_desktop: Option<RemoteDesktopData>,
+ }
+@@ -174,6 +187,7 @@ impl SessionData {
+ pub(crate) struct CaptureResult {
+     pub(crate) streams: Vec<(u32, StreamProps)>,
+     pub(crate) restore_data: Option<RestoreData>,
++    pub(crate) sources: Option<PersistedCaptureSources>,
+ }
+ 
+ pub(crate) enum CaptureOutcome {
+@@ -339,7 +353,8 @@ pub(crate) async fn capture_from_sources(
+ 
+     CaptureOutcome::Success(CaptureResult {
+         streams,
+-        restore_data: persisted_capture_sources.map(|x| x.into()),
++        restore_data: persisted_capture_sources.clone().map(|x| x.into()),
++        sources: persisted_capture_sources,
+     })
+ }
+ 
+
+From 1bcb2f95809aac85377ca80d5ffa8e348361a574 Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Fri, 19 Jun 2026 09:53:25 -0600
+Subject: [PATCH 10/11] chore: clippy fixes
+
+---
+ src/remote_desktop.rs | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/remote_desktop.rs b/src/remote_desktop.rs
+index e5099cef..cb0f830f 100644
+--- a/src/remote_desktop.rs
++++ b/src/remote_desktop.rs
+@@ -178,6 +178,7 @@ impl RemoteDesktop {
+     }
+ }
+ 
++#[allow(unused_variables)]
+ #[zbus::interface(name = "org.freedesktop.impl.portal.RemoteDesktop")]
+ impl RemoteDesktop {
+     async fn create_session(
+@@ -387,7 +388,8 @@ impl RemoteDesktop {
+         .await
+     }
+ 
+-    async fn connect_to_EIS(
++    #[zbus(name = "ConnectToEIS")]
++    async fn connect_to_eis(
+         &self,
+         #[zbus(connection)] connection: &zbus::Connection,
+         session_handle: zvariant::ObjectPath<'_>,
+
+From 508ce9e09f6d8f67ae552818d177ae9ff60f182d Mon Sep 17 00:00:00 2001
+From: Hojjat <hojjat.abdollahi@gmail.com>
+Date: Wed, 24 Jun 2026 16:05:35 -0600
+Subject: [PATCH 11/11] fix: absolute cursor position on scaled outputs
+
+---
+ src/remote_desktop.rs    | 47 ++++++++++++++++++++++++++++++++++++++--
+ src/remote_desktop_ei.rs | 32 +++++++++++++++++++++++----
+ src/screencast.rs        | 21 +++++++++++++++++-
+ 3 files changed, 93 insertions(+), 7 deletions(-)
+
+diff --git a/src/remote_desktop.rs b/src/remote_desktop.rs
+index cb0f830f..bb1c1ffc 100644
+--- a/src/remote_desktop.rs
++++ b/src/remote_desktop.rs
+@@ -30,6 +30,7 @@ pub(crate) struct RemoteDesktopData {
+     pub(crate) screen_cast_enabled: bool,
+     restore: Option<PersistedRemoteDesktop>,
+     pub(crate) ei_sender: Option<EiSender>,
++    pub(crate) stream_offsets: Vec<(u32, (i32, i32))>,
+ }
+ 
+ impl Default for RemoteDesktopData {
+@@ -42,6 +43,7 @@ impl Default for RemoteDesktopData {
+             screen_cast_enabled: false,
+             restore: None,
+             ei_sender: None,
++            stream_offsets: Vec::new(),
+         }
+     }
+ }
+@@ -166,6 +168,32 @@ impl RemoteDesktop {
+         }
+     }
+ 
++    /// The global logical offset of a stream (the captured output's position).
++    /// Defaults to (0, 0) if the stream is unknown.
++    async fn stream_offset(
++        &self,
++        connection: &zbus::Connection,
++        session_handle: &zvariant::ObjectPath<'_>,
++        stream: u32,
++    ) -> (i32, i32) {
++        let Some(interface) =
++            crate::session_interface::<SessionData>(connection, session_handle).await
++        else {
++            return (0, 0);
++        };
++        let session_data = interface.get().await;
++        session_data
++            .remote_desktop
++            .as_ref()
++            .and_then(|rd| {
++                rd.stream_offsets
++                    .iter()
++                    .find(|(node, _)| *node == stream)
++                    .map(|(_, off)| *off)
++            })
++            .unwrap_or((0, 0))
++    }
++
+     async fn notify(
+         &self,
+         connection: &zbus::Connection,
+@@ -377,6 +405,16 @@ impl RemoteDesktop {
+                 .into()
+             });
+ 
++            // Record each stream's global logical offset so absolute pointer input
++            // (sent in a stream's local space) can be mapped to global coordinates.
++            let stream_offsets: Vec<(u32, (i32, i32))> = streams
++                .iter()
++                .map(|(node, props)| (*node, props.position().unwrap_or((0, 0))))
++                .collect();
++            if let Some(remote_desktop) = interface.get_mut().await.remote_desktop.as_mut() {
++                remote_desktop.stream_offsets = stream_offsets;
++            }
++
+             PortalResponse::Success(StartResult {
+                 devices: device_types,
+                 clipboard_enabled,
+@@ -442,14 +480,19 @@ impl RemoteDesktop {
+         #[zbus(connection)] connection: &zbus::Connection,
+         session_handle: zvariant::ObjectPath<'_>,
+         _options: HashMap<String, zvariant::OwnedValue>,
+-        _stream: u32,
++        stream: u32,
+         x: f64,
+         y: f64,
+     ) {
++        // The coordinates are in the chosen stream's (output's) local space. Resolve
++        // that output's global offset so the EI sender can produce a global position.
++        let offset = self
++            .stream_offset(connection, &session_handle, stream)
++            .await;
+         self.notify(
+             connection,
+             &session_handle,
+-            Command::PointerMotionAbsolute { x, y },
++            Command::PointerMotionAbsolute { x, y, offset },
+         )
+         .await;
+     }
+diff --git a/src/remote_desktop_ei.rs b/src/remote_desktop_ei.rs
+index 0e3e4816..d5023792 100644
+--- a/src/remote_desktop_ei.rs
++++ b/src/remote_desktop_ei.rs
+@@ -16,7 +16,7 @@ use crate::remote_desktop::{DEVICE_KEYBOARD, DEVICE_POINTER, DEVICE_TOUCHSCREEN}
+ #[derive(Debug)]
+ pub enum Command {
+     PointerMotion { dx: f64, dy: f64 },
+-    PointerMotionAbsolute { x: f64, y: f64 },
++    PointerMotionAbsolute { x: f64, y: f64, offset: (i32, i32) },
+     PointerButton { button: i32, state: u32 },
+     PointerAxis { dx: f64, dy: f64 },
+     PointerAxisDiscrete { axis: u32, steps: i32 },
+@@ -115,6 +115,7 @@ struct State {
+     connection: reis::event::Connection,
+     caps: BitFlags<DeviceCapability>,
+     devices: HashMap<Device, DeviceState>,
++    abs_regions: Vec<(i32, i32, f64)>,
+ }
+ 
+ async fn run(
+@@ -127,6 +128,7 @@ async fn run(
+         connection,
+         caps,
+         devices: HashMap::new(),
++        abs_regions: Vec::new(),
+     };
+     loop {
+         tokio::select! {
+@@ -155,6 +157,16 @@ impl State {
+                 let _ = self.connection.flush();
+             }
+             EiEvent::DeviceAdded(evt) => {
++                let mut regions = Vec::new();
++                for r in evt.device.regions() {
++                    regions.push((r.x as i32, r.y as i32, r.scale as f64));
++                }
++                if !regions.is_empty() {
++                    // The compositor recreates the absolute-pointer device with a fresh
++                    // region per output whenever an output's scale or geometry changes, so
++                    // replace the stale set rather than accumulating across re-adds.
++                    self.abs_regions = regions;
++                }
+                 self.devices.insert(
+                     evt.device,
+                     DeviceState {
+@@ -207,10 +219,22 @@ impl State {
+                     p.motion_relative(dx as f32, dy as f32);
+                 });
+             }
+-            // `stream` (which output) is ignored for now; treat as a single space.
+-            Command::PointerMotionAbsolute { x, y } => {
++            Command::PointerMotionAbsolute { x, y, offset } => {
++                // `x`/`y` arrive in the stream's *physical* pixel space (we advertise the
++                // physical size to the consumer so it maps 1:1 over the video). Convert to
++                // the compositor's logical space by dividing by the output scale, taken from
++                // the EI absolute-pointer region whose offset matches this stream, then add
++                // the stream's global logical offset.
++                let scale = self
++                    .abs_regions
++                    .iter()
++                    .find(|(rx, ry, _)| *rx == offset.0 && *ry == offset.1)
++                    .map(|(_, _, s)| *s)
++                    .unwrap_or(1.0);
++                let ex = (offset.0 as f64 + x / scale) as f32;
++                let ey = (offset.1 as f64 + y / scale) as f32;
+                 self.emit::<ei::PointerAbsolute, _>(serial, time, |p| {
+-                    p.motion_absolute(x as f32, y as f32);
++                    p.motion_absolute(ex, ey);
+                 });
+             }
+             Command::PointerButton { button, state } => {
+diff --git a/src/screencast.rs b/src/screencast.rs
+index 5a1aaada..d24a6a25 100644
+--- a/src/screencast.rs
++++ b/src/screencast.rs
+@@ -149,6 +149,14 @@ pub struct StreamProps {
+     mapping_id: Option<String>,
+ }
+ 
++impl StreamProps {
++    /// The stream's global logical offset (the captured output's position in the
++    /// compositor layout), used to map absolute input to global coordinates.
++    pub fn position(&self) -> Option<(i32, i32)> {
++        self.position
++    }
++}
++
+ #[derive(zvariant::SerializeDict, zvariant::Type)]
+ #[zvariant(signature = "a{sv}")]
+ struct StartResult {
+@@ -270,7 +278,18 @@ pub(crate) async fn capture_from_sources(
+     for output in &capture_sources.outputs {
+         let info = wayland_helper.output_info(output);
+         let (position, size) = if let Some(info) = info {
+-            (info.logical_position, info.logical_size.unwrap_or((0, 0)))
++            // Advertise the *physical* (current-mode) size, matching the actual video
++            // buffer, so the consumer maps absolute pointer input 1:1 over the video.
++            // The portal converts these physical coordinates back to the compositor's
++            // logical space on input
++            let physical = info
++                .modes
++                .iter()
++                .find(|m| m.current)
++                .map(|m| m.dimensions)
++                .or(info.logical_size)
++                .unwrap_or((0, 0));
++            (info.logical_position, physical)
+         } else {
+             (Some((0, 0)), (0, 0))
+         };
