@@ -76,6 +76,7 @@ declare -A CORE_REPOS=(
   ["cosmic-settings-daemon"]="cosmic-settings-daemon"
   ["cosmic-settings"]="cosmic-settings"
   ["cosmic-term"]="cosmic-term"
+  ["cosmic-sound-theme"]="cosmic-sound-theme"
   ["cosmic-store"]="cosmic-store"
   ["cosmic-workspaces-epoch"]="cosmic-workspaces-epoch"
   ["launcher"]="launcher"
