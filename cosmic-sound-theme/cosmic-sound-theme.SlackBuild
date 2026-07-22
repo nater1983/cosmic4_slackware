@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Slackware build script for just
+# Slackware build script for cosmic-sound-theme
 
 # Copyright 2024 Nathaniel Russell <naterussell83@gmail.com>
 # All rights reserved.
@@ -26,7 +26,7 @@ wget -c https://github.com/casey/just/archive/1.25.2/just-1.25.2.tar.gz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
-PRGNAM=just
+PRGNAM=cosmic-sound-theme
 VERSION=${VERSION:-1.25.2}
 TAG=_cosmic
 BUILD=${BUILD:-1}
