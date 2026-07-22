@@ -1,0 +1,19 @@
+# HOW TO EDIT THIS FILE:
+# The "handy ruler" below makes it easier to edit a package description.
+# Line up the first '|' above the ':' following the base package name, and
+# the '|' on the right side marks the last column you can put a character in.
+# You must make exactly 11 lines for the formatting to be correct.  It's also
+# customary to leave one space after the ':' except on otherwise blank lines.
+
+                  |-----handy-ruler------------------------------------------------------|
+cosmic-sound-theme: cosmic-sound-theme (System76 COSMIC Sound Theme)
+cosmic-sound-theme:
+cosmic-sound-theme: The source file is the .mmpz file; it's a standard LMMS project, and
+cosmic-sound-theme: uses only default instruments and effects. It was created in LMMS 1.2,
+cosmic-sound-theme: but it may work in LMMS 1.1.3 as well. Each different sound is its own
+cosmic-sound-theme: track, and there's a segment for each sound. Some tracks may require
+cosmic-sound-theme: trimming to ensure they don't have too much silence. Be sure to apply
+cosmic-sound-theme: a compressor and to normalize the sounds to ensure that chords aren't
+cosmic-sound-theme: excessively loud and single-notes aren't too quiet. The ideal peak
+cosmic-sound-theme: seems to be close to 0.6-ish in Audacity.
+cosmic-sound-theme: Homepage: https://github.com/pop-os/cosmic-sound-theme
