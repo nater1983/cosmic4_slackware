@@ -28,6 +28,7 @@ cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=cosmic-sound-theme
 VERSION=${VERSION:-1.25.2}
+_commit=1.3.0
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
@@ -71,9 +72,9 @@ set -e
 rm -rf $PKG
 mkdir -p $TMP $PKG
 cd $TMP
-rm -rf $PRGNAM-$VERSION
-tar xvf $CWD/$PRGNAM-$VERSION.tar.?z || exit 1
-cd $PRGNAM-$VERSION || exit 1
+rm -rf $PRGNAM-$_commit
+tar xvf $CWD/$PRGNAM-$_commit.tar.?z || exit 1
+cd $PRGNAM-$_commit || exit 1
 chown -R root:root .
 find -L . \
  \( -perm 777 -o -perm 775 -o -perm 750 -o -perm 711 -o -perm 555 \
@@ -81,14 +82,24 @@ find -L . \
  \( -perm 666 -o -perm 664 -o -perm 640 -o -perm 600 -o -perm 444 \
   -o -perm 440 -o -perm 400 \) -exec chmod 644 {} \;
 
-CARGO_HOME=.cargo \
+mkdir build
+cd build
 CFLAGS="$SLKCFLAGS" \
 CXXFLAGS="$SLKCFLAGS" \
-cargo build --release $CARGOTARGET
-
-mkdir -p $PKG/usr/bin/
-
-find target -name $PRGNAM -exec install -m 755 {} $PKG/usr/bin/$PRGNAM \;
+meson setup ..\
+ --prefix=/usr \
+ --buildtype=release \
+ --libdir=lib${LIBDIRSUFFIX} \
+ --libexecdir=/usr/libexec \
+ --sysconfdir=/etc \
+ --infodir=/usr/info \
+ --mandir=/usr/man \
+ --localstatedir=/var \
+ -Ddefault_library=shared \
+ -Dprofile=default
+  "${NINJA:=ninja}"
+  DESTDIR=$PKG $NINJA install
+cd ..
 
 rm -f $PKG/{,usr/}lib${LIBDIRSUFFIX}/*.la
 
@@ -119,7 +130,7 @@ if [ -d $PKG/usr/info ]; then
 fi
 
 mkdir -p $PKG/usr/doc/$PRGNAM-$VERSION
-cp -a CHANGELOG.md CONTRIBUTING.md GRAMMAR.md LICENSE README.md \
+cp -a AUTHORS CODE_OF_CONDUCT.md LICENSE README.md \
     $PKG/usr/doc/$PRGNAM-$VERSION
 
 # Remove any systemd files if present
@@ -137,4 +148,5 @@ if [ -f $CWD/slack-suggests ]; then cat $CWD/slack-suggests > $PKG/install/slack
 if [ -f $CWD/slack-conflicts ]; then cat $CWD/slack-conflicts > $PKG/install/slack-conflicts; fi
 
 cd $PKG
+if [ -f "$CWD/slack-required" ]; then cat "$CWD/slack-required" > "$PKG/usr/doc/$PRGNAM-$VERSION/slack-required"; fi
 /sbin/makepkg -l y -c n $OUTPUT/$PRGNAM-$VERSION-$ARCH-$BUILD$TAG.$PKGTYPE
