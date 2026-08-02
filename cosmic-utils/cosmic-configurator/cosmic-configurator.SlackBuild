@@ -22,14 +22,14 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c https://github.com/cosmic-utils/configurator/archive/0dc3897a10ef026541823c5b494ee37ba15b8607/configurator-0dc3897a10ef026541823c5b494ee37ba15b8607.tar.gz
+wget -c https://github.com/cosmic-utils/configurator/archive/7ee48623da9c971f439f391d6ffabb7c2cb36453/configurator-7ee48623da9c971f439f391d6ffabb7c2cb36453.tar.gz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=cosmic-configurator
 NAME=configurator
-VERSION=20260314.0dc3897
-_commit=0dc3897a10ef026541823c5b494ee37ba15b8607
+VERSION=20260502.7ee4862
+_commit=7ee48623da9c971f439f391d6ffabb7c2cb36453
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}

@@ -22,14 +22,14 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c https://github.com/cosmic-utils/calendar/archive/9bf0de542482be25fadbbed0ce32bfdaadf0e928/calendar-9bf0de542482be25fadbbed0ce32bfdaadf0e928.tar.gz
+wget -c https://github.com/cosmic-utils/calendar/archive/0b86cf6d52114e1162403a37f61f6fe86b8a288c/calendar-0b86cf6d52114e1162403a37f61f6fe86b8a288c.tar.gz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=cosmic-calendar
 NAME=calendar
-VERSION=20260211.9bf0de5
-_commit=9bf0de542482be25fadbbed0ce32bfdaadf0e928
+VERSION=20260729.0b86cf6
+_commit=0b86cf6d52114e1162403a37f61f6fe86b8a288c
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
