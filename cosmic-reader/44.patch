@@ -4,27 +4,10 @@ Date: Wed, 15 Apr 2026 23:44:10 +0200
 Subject: [PATCH] Printing capability added
 
 ---
- Cargo.lock                |  4 ++--
  i18n/en/cosmic_reader.ftl |  4 +++-
  src/mupdf/mod.rs          | 43 ++++++++++++++++++++++++++++++++++++++-
  3 files changed, 47 insertions(+), 4 deletions(-)
 
-diff --git a/Cargo.lock b/Cargo.lock
-index 901f3cd..e786e65 100644
---- a/Cargo.lock
-+++ b/Cargo.lock
-@@ -613,9 +613,9 @@ dependencies = [
- 
- [[package]]
- name = "bindgen"
--version = "0.71.1"
-+version = "0.72.1"
- source = "registry+https://github.com/rust-lang/crates.io-index"
--checksum = "5f58bf3d7db68cfbac37cfc485a8d711e87e064c3d0fe0435b92f7a407f9d6b3"
-+checksum = "993776b509cfb49c750f11b8f07a46fa23e0a1386ffc01fb1e7d343efc387895"
- dependencies = [
-  "bitflags 2.10.0",
-  "cexpr",
 diff --git a/i18n/en/cosmic_reader.ftl b/i18n/en/cosmic_reader.ftl
 index 69891f0..b8bb4e8 100644
 --- a/i18n/en/cosmic_reader.ftl
