@@ -91,6 +91,7 @@ find -L . \
 export RUSTUP_TOOLCHAIN=stable
 cargo fetch
 RUSTFLAGS+=" -C link-arg=-fuse-ld=mold"
+just xdgen
 just build-release --frozen
 just rootdir=$PKG install
 
