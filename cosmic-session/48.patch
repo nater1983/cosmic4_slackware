@@ -2,8 +2,8 @@ diff --git a/data/start-cosmic b/data/start-cosmic
 index f723d5e..d0ca899 100755
 --- a/data/start-cosmic
 +++ b/data/start-cosmic
-@@ -43,6 +43,11 @@ if command -v systemctl >/dev/null; then
-     systemctl --user import-environment XDG_SESSION_TYPE XDG_CURRENT_DESKTOP DCONF_PROFILE
+@@ -55,6 +55,11 @@ if [ -z "$QT_QPA_PLATFORMTHEME" ]; then
+     done
  fi
  
 +SSH_AGENT=""
@@ -12,12 +12,12 @@ index f723d5e..d0ca899 100755
 +fi
 +
  # Start gnome keyring components if the daemon is active
- # -> check if /run/user/$UID/keyring exists
- if [ -d "/run/user/$(id -u)/keyring" ]; then
-@@ -60,7 +65,7 @@ fi
+ # -> check if $XDG_RUNTIME_DIR/keyring exists
+ if [ -d "$XDG_RUNTIME_DIR/keyring" ]; then
+@@ -104,7 +109,7 @@ fi
  
  # Run cosmic-session
- if [[ -z "${DBUS_SESSION_BUS_ADDRESS}" ]]; then
+ if [ -z "${DBUS_SESSION_BUS_ADDRESS}" ]; then
 -    exec /usr/bin/dbus-run-session -- /usr/bin/cosmic-session
 +    exec /usr/bin/dbus-run-session -- $SSH_AGENT /usr/bin/cosmic-session
  else
