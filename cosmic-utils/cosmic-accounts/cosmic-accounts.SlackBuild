@@ -22,14 +22,14 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-wget -c https://github.com/cosmic-utils/accounts/archive/04f991b70c8a24f6a4337a082240f00cbcfc6d9b/accounts-04f991b70c8a24f6a4337a082240f00cbcfc6d9b.tar.gz
+wget -c https://github.com/cosmic-utils/accounts/archive/3c3330dc4b700310f1f5edefd10346c4da3a7a4a/accounts-3c3330dc4b700310f1f5edefd10346c4da3a7a4a.tar.gz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=cosmic-accounts
 NAME=accounts
-VERSION=20260730.04f991b
-_commit=04f991b70c8a24f6a4337a082240f00cbcfc6d9b
+VERSION=20260830.3c3330d
+_commit=3c3330dc4b700310f1f5edefd10346c4da3a7a4a
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
