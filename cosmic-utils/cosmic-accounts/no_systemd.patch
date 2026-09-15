@@ -1,7 +1,7 @@
-diff --git a/crates/ui//data/cosmic-accounts.service b/crates/ui//data/cosmic-accounts.service
+diff --git a/crates/ui/data/cosmic-accounts.service b/crates/ui/data/cosmic-accounts.service
 index 957d46e..1b35b0a 100644
---- a/crates/ui//data/cosmic-accounts.service
-+++ b/crates/ui//data/cosmic-accounts.service
+--- a/crates/ui/ata/cosmic-accounts.service
++++ b/crates/ui/data/cosmic-accounts.service
 @@ -1,14 +1,10 @@
 -[Unit]
 -Description=Online Accounts for COSMIC
