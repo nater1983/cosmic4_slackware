@@ -1,0 +1,12 @@
+diff --git a/crates/core/src/registry.rs b/crates/core/src/registry.rs
+index 2b9e6ce..a767024 100644
+--- a/crates/core/src/registry.rs
++++ b/crates/core/src/registry.rs
+@@ -193,7 +193,7 @@ impl ProviderRegistry {
+                 dirs.push(PathBuf::from(dir).join("accounts/providers"));
+             }
+         } else {
+-            dirs.push(PathBuf::from("/usr/local/share/accounts/providers"));
++            dirs.push(PathBuf::from("/etc/accounts/providers"));
+             dirs.push(PathBuf::from("/usr/share/accounts/providers"));
+         }
