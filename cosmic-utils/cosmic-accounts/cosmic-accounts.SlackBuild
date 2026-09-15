@@ -96,7 +96,17 @@ export RUSTUP_TOOLCHAIN=stable
 cargo fetch
 RUSTFLAGS+=" -C link-arg=-fuse-ld=mold"
 just build
-just rootdir=$PKG install
+
+install -Dm0755 target/release/accounts_ui $PKG/usr/bin/accounts_ui
+install -Dm0755 crates/ui/data/accounts-ui-daemon $PKG/usr/bin/accounts-ui-daemon
+install -Dm0755 crates/ui/data/accounts-consent-prompt $PKG/usr/bin/accounts-consent-prompt
+install -Dm0644 crates/ui/data/dev.edfloreshz.Accounts.service $PKG/usr/share/dbus-1/services/dev.edfloreshz.Accounts.service
+install -Dm0644 crates/ui/data/dev.edfloreshz.Accounts.ConsentPrompt.service $PKG/usr/share/dbus-1/services/dev.edfloreshz.Accounts.ConsentPrompt.service
+install -Dm0644 crates/ui/resources/app.desktop $PKG/usr/share/applications/dev.edfloreshz.Accounts.desktop
+install -Dm0644 crates/ui/resources/app.metainfo.xml $PKG/usr/share/metainfo/dev.edfloreshz.Accounts.metainfo.xml
+install -Dm0644 crates/ui/resources/icons/hicolor/scalable/apps/icon.svg $PKG/usr/share/icons/hicolor/scalable/apps/dev.edfloreshz.Accounts.svg
+install -Dm0644 crates/ui/data/dev.edfloreshz.Accounts.policy $PKG/usr/share/polkit-1/actions/dev.edfloreshz.Accounts.policy
+install -Dm0644 crates/ui/data/providers/*.toml -t $PKG/etc/accounts/providers
 
 find $PKG -print0 | xargs -0 file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null || true
