@@ -86,6 +86,7 @@ find -L . \
 just vendor
 just vendor-extract
 
+export LOCKSTEP_XML_PATH="$PWD/vendor/atspi-common/xml"
 export VERGEN_GIT_COMMIT_DATE="$(date --utc '+%Y-%m-%d %H:%M:%S %z')"
 export VERGEN_GIT_SHA=$_commit
 export RUSTUP_TOOLCHAIN=stable
