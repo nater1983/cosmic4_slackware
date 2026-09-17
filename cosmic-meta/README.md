@@ -1,3 +1,317 @@
+COSMIC Epoch 1.8.0
+
+A large change to cosmic-comp has landed that improves touchscreen support. Further changes will be required for COSMIC applications. The on-screen keyboard, which is not yet included in releases, has seen a lot of work as well and will be released soon.
+
+Here is a summary of the changes since the last tag. For full details, see epoch-1.7.0...epoch-1.8.0
+
+    Translation updates and dependency updates for many projects
+    cosmic-applets
+        Fix microphone volume applying to speaker instead of microphone: pop-os/cosmic-applets#1533
+        Show custom bluetooth device name: pop-os/cosmic-applets#1534
+        Fix pixelated icons: pop-os/cosmic-applets#1546
+    cosmic-app-library
+        Center app names: pop-os/cosmic-app-library#400
+        Fix some packaging issues: pop-os/cosmic-app-library#399 and pop-os/cosmic-app-library#401
+    cosmic-comp
+        Update Smithay, which improves mouse capture: pop-os/cosmic-comp#2759
+        Allow X11 windows to start minimized: pop-os/cosmic-comp#2656
+        Fix screenshot tool crashing (due to corner radius issues): pop-os/cosmic-comp#2788 and pop-os/cosmic-comp#2816
+        Configurable server side decorations: pop-os/cosmic-comp#2736
+        Check all connectors for primary GPU, fixes issues with some hybrid GPU laptops: pop-os/cosmic-comp#2624
+        Do not magnify cursor when it is grabbing a window: pop-os/cosmic-comp#2790
+        Fix sluggish steam overlays by ensuring X11 windows keep getting frame callbacks: pop-os/cosmic-comp#2800
+        Update EI modifiers when keyboard layout changes, ensures cosmic-osk shows the correct layout: pop-os/cosmic-comp#2815
+        Support for grabs when using touch input, which vastly improves touchscreen support in COSMIC: pop-os/cosmic-comp#2725
+        Align the corner radii order with the theme, see the screenshots for details: pop-os/cosmic-comp#2819
+        Sort outputs by connector so output layout fallback is consistent: pop-os/cosmic-comp#2813
+        Fix blur region not matching with app library window: pop-os/cosmic-comp#2822
+    cosmic-files
+        Fix drag select rectangle not redrawing: pop-os/cosmic-files#2019
+        Switch to another tab only if the active tab is closed: pop-os/cosmic-files#1949
+    cosmic-greeter
+        Fix for multi-factor authentication: pop-os/cosmic-greeter#502
+        Fix for compiling without logind feature: pop-os/cosmic-greeter#536
+    cosmic-icons
+        Update web-browser-symbolic and add printer-queue-symbolic icons: pop-os/cosmic-icons#53
+    cosmic-launcher
+        Fix some packaging issues: pop-os/cosmic-launcher#459 and pop-os/cosmic-launcher#462
+    cosmic-osd
+        Add on-screen display for keyboard layout changes: pop-os/cosmic-osd#220
+    cosmic-panel
+        Use the same border radius for the container and background: pop-os/cosmic-panel#678
+    cosmic-player
+        Fix playback of files with invalid framerates: pop-os/cosmic-player#294
+    cosmic-settings
+        Keep scroll position when searching and opening a submenu: pop-os/cosmic-settings#2172
+        Fix display page not redrawing while dragging displays: pop-os/cosmic-settings#2180
+        Support renaming bluetooth devices: pop-os/cosmic-settings#2160
+    cosmic-settings-daemon
+        Check every AC power input in order to determine if AC is connected: pop-os/cosmic-settings-daemon#187
+        Fix external monitor brightness lagging: pop-os/cosmic-settings-daemon#184
+    cosmic-workspaces-epoch
+        Fix window disappearing if dragged and dropped on the same workspace: pop-os/cosmic-workspaces-epoch#322
+    xdg-desktop-portal-cosmic
+        Do not panic when low-level wayland error can be ignored: pop-os/xdg-desktop-portal-cosmic#349
+
+COSMIC Epoch 1.7.0
+
+Here is a summary of the changes since the last tag. For full details, see epoch-1.6.0...epoch-1.7.0
+
+    Translation updates and dependency updates for many projects
+    cosmic-comp
+        Always turn on the screen when the computer is unlocked: pop-os/cosmic-comp#2744
+        Magnify the cursor when it is shaken to make it easy to locate: pop-os/cosmic-comp#2610
+        Zoom will increase more with each keypress: pop-os/cosmic-comp#2616
+        Scalable cursors (they will not be blurry when size is increased): pop-os/cosmic-comp#2659
+    cosmic-edit
+        Only select another tab if the currently selected tab is closed: pop-os/cosmic-edit#603
+        Do not allow clicking Cut and Copy menu buttons when no text is selected: pop-os/cosmic-edit#588
+    cosmic-files
+        Allow searching for applications in open with dialog: pop-os/cosmic-files#1943
+        Allow navigating to a network location from any location: pop-os/cosmic-files#1984
+        Fix application closing when modification time is invalid: pop-os/cosmic-files#1959
+        Improve network filesystem browsing performance: pop-os/cosmic-files#1996
+        Allow renaming sidebar favorites: pop-os/cosmic-files#1911
+        Fix alignment of file names in grid view: pop-os/cosmic-files#2004
+    cosmic-greeter
+        Allow log-in to continue when a non-fatal error message is returned by PAM: pop-os/cosmic-greeter#512
+    cosmic-panel
+        Fix panel crashes: pop-os/cosmic-panel#665
+    cosmic-session
+        Make start-cosmic compatible with POSIX sh, removing bash dependency: pop-os/cosmic-session#215
+    cosmic-settings
+        Fix refresh rate reverting to default when monitors are moved: pop-os/cosmic-settings#2139
+        Add option to magnify cursor when it is shaken: pop-os/cosmic-settings#2100
+        Disable move up and move down menu buttons for first and last keyboard layouts: pop-os/cosmic-settings#2170
+        Remove unimplemented menu items from input page: pop-os/cosmic-settings#2169
+        Add back navigation on bluetooth page when there are multiple adapters: pop-os/cosmic-settings#2154
+    cosmic-settings-daemon
+        Fix low battery alert on systems without batteries: pop-os/cosmic-settings-daemon#186
+    cosmic-store
+        Do not scroll back button: pop-os/cosmic-store#588
+    cosmic-wallpapers
+        Add COSMIC logo and logo pattern wallpapers: pop-os/cosmic-wallpapers#12
+    xdg-desktop-portal-cosmic
+        Implement remote desktop portal, which allows things like Steam Input to control the keyboard and mouse: pop-os/xdg-desktop-portal-cosmic#317
+        Fix occasional failure to copy screenshots to clipboard: pop-os/xdg-desktop-portal-cosmic#338
+
+COSMIC Epoch 1.6.0
+
+Here is a summary of the changes since the last tag. For full details, see epoch-1.5.0...epoch-1.6.0
+
+    Translation updates and dependency updates for many projects
+    cosmic-applets
+        status-area: constrain menu icon-data to icon size: pop-os/cosmic-applets#1466
+        audio: debounce volume updates by 128ms: pop-os/cosmic-applets#1482
+    cosmic-comp
+        Support wl-dmabuf-v6: pop-os/cosmic-comp#2513
+        Take presentation feedback from fullscreen surfaces: pop-os/cosmic-comp#2683
+        EI protocol support: pop-os/cosmic-comp#2442
+    cosmic-edit
+        Fewer redraws and context menu in input fields: pop-os/cosmic-edit#604
+    cosmic-files
+        Fix infinite dialogs with network mount failure: pop-os/cosmic-files#1956
+        Add context menu to text fields and selectable text widget: pop-os/cosmic-files#1815
+    cosmic-greeter
+        Detect logind presence at runtime: pop-os/cosmic-greeter#492
+        Ignore empty password: pop-os/cosmic-greeter#509 and pop-os/cosmic-greeter#515
+        Enable JPEG-XL and AVIF: pop-os/cosmic-greeter#516
+    cosmic-launcher
+        Prevent launcher flickering and closing when Ctrl modifier is used: pop-os/cosmic-launcher#439
+    cosmic-notifications
+        Delay creation of popups until the parent size is available: pop-os/cosmic-notifications#168
+    cosmic-settings
+        search: don't unload active page during search: pop-os/cosmic-settings#2050
+        sound: add app specific settings: pop-os/cosmic-settings#2138
+    cosmic-settings-daemon
+        Fix panic on -1 max brightness value: pop-os/cosmic-settings-daemon#177
+        battery: watch AC plug events from line power device via upower: pop-os/cosmic-settings-daemon#180
+        audio: make events backward compatible: pop-os/cosmic-settings-daemon#181
+        audio: handle playback specific sound settings: pop-os/cosmic-settings-daemon#179
+    cosmic-term
+        Allow configuring terminal borders: pop-os/cosmic-term#888
+        Round subpixel coordinates for glyph background rectangles: pop-os/cosmic-term#892
+        Redraw when needed and context menu in input fields: pop-os/cosmic-term#896
+
+COSMIC Epoch 1.5.0
+
+Here is a summary of the changes since the last tag. For full details, see epoch-1.4.0...epoch-1.5.0
+
+    Translation updates and dependency updates for many projects
+    cosmic-bg
+        Use EXIF orientation: pop-os/cosmic-bg#142
+    cosmic-comp
+        Fix SIGABRT when kiosk child exits, and ignore EPERM/EACCES error on DRM cleanup: pop-os/cosmic-comp#2382
+        Workaround for Chromium apps breaking below 1.0 scaling: pop-os/cosmic-comp#2623
+        Fix dbus deadlock in a11y keyboard monitor: pop-os/cosmic-comp#2622
+        Ensure X window focus on unmap/map: pop-os/cosmic-comp#2620
+        Don't panic when renderer creation fails after a GPU reset: pop-os/cosmic-comp#2487
+        Clamp pointer edge after applying the output offset: pop-os/cosmic-comp#2657
+        corner_radius: check LayerHookId for layer surfaces: pop-os/cosmic-comp#2654
+    cosmic-greeter
+        Use cosmic-keymap-unstable-v1 wayland protocol: pop-os/cosmic-greeter#498
+    cosmic-initial-setup
+        Fix list alignment: pop-os/cosmic-initial-setup#145
+    cosmic-panel
+        Fix frosted glass for applets on hotplugged external monitor: pop-os/cosmic-panel#646
+        Fix flickering when using frosted glass when preserving style on window maximize: pop-os/cosmic-panel#640
+        Close popups on all outputs before adding a new one: pop-os/cosmic-panel#652
+        Fixes for touch input: pop-os/cosmic-panel#550
+        Fix high CPU usage when screen is locked: pop-os/cosmic-panel#653
+    cosmic-settings
+        wallpaper: Increase wallpaper limit from 100 to 500: pop-os/cosmic-settings#1785
+        wallpaper: use EXIF orientation: pop-os/cosmic-settings#2075
+        wallpaper: Allow adding multiple images at once: pop-os/cosmic-settings#2078
+        Slider widget handle improvements: pop-os/cosmic-settings#2107
+        display: fix one pixel gap between outputs due to rounding error: pop-os/cosmic-settings#2117
+        networking: stop storing the VPN username as a secret: pop-os/cosmic-settings#2116
+    cosmic-settings-daemon
+        brightness: drop cached DDC handles when idle, fixes hangs: pop-os/cosmic-settings-daemon#171
+    cosmic-store
+        Center text in places where container content is aligned to center: pop-os/cosmic-store#579
+    cosmic-term
+        Configurable terminal pane borders: pop-os/cosmic-term#778
+    xdg-desktop-portal-cosmic
+        screencast: support metadata cursor capture: pop-os/xdg-desktop-portal-cosmic#175
+
+COSMIC Epoch 1.4.0
+
+Here is a summary of the changes since the last tag. For full details, see epoch-1.3.0...epoch-1.4.0
+
+    cosmic-sound-theme has been adding for packaging. The default sound theme will be switched to this as the old pop-os/gtk-theme repo containing the Pop sound theme has been deprecated
+    Translation updates and dependency updates for many projects
+    cosmic-applets
+        network: re-register secret agent after NetworkManager restart: pop-os/cosmic-applets#1480
+    cosmic-comp
+        Remove attempts to force redraw: pop-os/cosmic-comp#2543
+        Fix frozen/detached active window hint: pop-os/cosmic-comp#2572
+        Fix input to cropped tiled windows: pop-os/cosmic-comp#2551
+        Notify readines on non-systemd systems: pop-os/cosmic-comp#2547
+        Fix kiosk command with command line options: pop-os/cosmic-comp#2545
+        clippy fixes: pop-os/cosmic-comp#2575
+        Migrate from unmaintained vector math library: pop-os/cosmic-comp#2589
+        Fix feature gate for logind: pop-os/cosmic-comp#2582
+        Fix flicker when switching between menus in tiled libcosmic apps: pop-os/cosmic-comp#2585
+        Fix some games not entering fullscreen: pop-os/cosmic-comp#2534
+        Improve screen edge pointer accuracy with fractional scaling: pop-os/cosmic-comp#2568
+        Various cursor image-copy fixes: pop-os/cosmic-comp#2571
+        Release active popup grabs on toplevel destruction: pop-os/cosmic-comp#2584
+        Fix border width discrepancy when using fractional scaling: pop-os/cosmic-comp#2570
+    cosmic-files
+        Fall back to GIO on destination open failure for MTP copies: pop-os/cosmic-files#1923
+        Fix trash directory detection: pop-os/cosmic-files#1933
+    cosmic-launcher
+        Reset the results list when the search query changes: pop-os/cosmic-launcher#447
+    cosmic-monitor
+        Implement application quit and force quit: pop-os/cosmic-monitor#78
+        Allow switching CPU and GPU graph types, design updates, and collect GPU frequency: pop-os/cosmic-monitor#80
+    cosmic-panel
+        Fix crash by setting a minimum size for anchor rect: pop-os/cosmic-panel#641
+        Fix crash when changing output scale: pop-os/cosmic-panel#649
+    cosmic-settings
+        Preserve content when rebuilding appearance drawer: pop-os/cosmic-settings#2081
+        Fix source volume changes accidentally applying to sink: pop-os/cosmic-settings#2098
+    cosmic-settings-daemon
+        Volume step configuration: pop-os/cosmic-settings-daemon#169
+    cosmic-workspaces
+        Clean up blur rectangles when a toplevel is closed: pop-os/cosmic-workspaces-epoch#323
+    xdg-desktop-portal-cosmic
+        Run as system service, log with tracing/journald, and terminate if wayland thread crashes: pop-os/xdg-desktop-portal-cosmic#337
+
+COSMIC Epoch 1.3.0
+
+Here is a summary of the changes since the last tag. For full details, see epoch-1.2.0...epoch-1.3.0
+
+    Frosted glass is now supported, involving months of work throughout the COSMIC desktop. Open COSMIC Settings, navigate to the Desktop page in the sidebar, then the Appearance page, and finally click on Frosted glass in the Style section to adjust settings. App and applet developers must update their libcosmic versions in order to support frosted glass.
+    Translation updates and dependency updates for many projects
+    cosmic-applets
+        status-area: forward mouse scroll events to StatusNotifierItems: pop-os/cosmic-applets#1431
+        bluetooth: show known devices: pop-os/cosmic-applets#1459
+        network: migrate from NetworkManager to nmrs: pop-os/cosmic-applets#1453
+        input-sources: use cosmic-keymap-unstable-v1 wayland protocol: pop-os/cosmic-applets#1441
+    cosmic-bg
+        Switch to libdav1d for avif support in image crate: pop-os/cosmic-bg#141
+    cosmic-comp
+        Prevent rounding errors in magnifier: pop-os/cosmic-comp#2516
+        Fix laptop screen stuck on vendor logo when external monitor connected: pop-os/cosmic-comp#2508
+        Fix texture corruption with multiple GPUs: pop-os/cosmic-comp#2504
+        Add cosmic-keyboard-layout-unstable-v1 protocol: pop-os/cosmic-comp#660
+        Restore fullscreen surface back to stack: pop-os/cosmic-comp#2489
+        Fall back to legacy X11 names when loading pointer themes: pop-os/cosmic-comp#2527
+        Correct magnifier focal point math: pop-os/cosmic-comp#2533
+        Fix uninimized window at wrong size after animation ends: pop-os/cosmic-comp#2491
+        Forward libinput axis relative direction to wayland clients, fixes some touchpad gestures: pop-os/cosmic-comp#2469
+    cosmic-files
+        Support MIME subclasses in dialog scanning: pop-os/cosmic-files#1669
+        Fix crash when right clicking mounted path in nav bar: pop-os/cosmic-files#1919
+    cosmic-monitor
+        Allow NVIDIA GPU to suspend (and other GPU-related improvements): pop-os/cosmic-monitor#62 and pop-os/cosmic-monitor#71
+        Calculate power usage for AMD/Intel GPUs, show GPU power and total VRAM in dashboard: pop-os/cosmic-monitor#75
+        Collect GPU memory usage for Intel GPUs: pop-os/cosmic-monitor#76
+    cosmic-panel
+        Improve framepacing of embedded applet popups: pop-os/cosmic-panel#631
+        Always hide option for panels: pop-os/cosmic-panel#627
+        Option to preserve panel/dock style on window maximize: pop-os/cosmic-panel#601
+    cosmic-settings
+        Enable avif wallpaper support using libdav1d: pop-os/cosmic-settings#2051
+        Throttle volume sliders by 128ms: pop-os/cosmic-settings#2063
+        Fix reverting display orientation changes: pop-os/cosmic-settings#2065
+        Replace custom NetworkManager backend with nmrs: pop-os/cosmic-settings#2068
+    cosmic-settings-daemon
+        Use cosmic-keymap-unstable-v1 wayland protocol: pop-os/cosmic-settings-daemon#153
+        Unset incorrect flatpak override for QT_QPA_PLATFORMTHEME: pop-os/cosmic-settings-daemon#166
+    cosmic-term
+        Fix fractional mouse wheel scrolling: pop-os/cosmic-term#861
+        Fix terminal losing focus when clicking the header bar: pop-os/cosmic-term#864
+    pop-launcher
+        Show discrete GPU as default within COSMIC context menu: pop-os/launcher#286
+    xdg-desktop-portal-cosmic
+        Avoid handling panics with an abort: pop-os/xdg-desktop-portal-cosmic#333
+
+COSMIC Epoch 1.2.0
+
+Here is a summary of the changes since the last tag. For full details, see epoch-1.1.0...epoch-1.2.0
+
+    Translation updates and dependency updates for many projects
+    cosmic-applets
+        vpn: fix no longer prompting for password: pop-os/cosmic-applets#1445
+        network: use libcosmic spinner when connecting: pop-os/cosmic-applets#1450
+        bluetooth: use libcosmic spinner when connecting: pop-os/cosmic-applets#1451
+        battery: show plug icon when there is no battery: pop-os/cosmic-applets#1432
+    cosmic-bg
+        Enable AVIF support: pop-os/cosmic-bg#140
+    cosmic-comp
+        Fix flicker when opening workspace overview: pop-os/cosmic-comp#2505
+        Quirk for newer Intel GPUs: pop-os/cosmic-comp#2510
+    cosmic-edit
+        Fix missing characters when using rustconf: pop-os/cosmic-edit#581
+        Save file to recents on save: pop-os/cosmic-edit#585
+    cosmic-files
+        Fix archive extraction crash: pop-os/cosmic-files#1869
+        Add file checksums to properties panel: pop-os/cosmic-files#1534
+        View folder's content in trash: pop-os/cosmic-files#1878
+    cosmic-greeter
+        Use libcosmic spinner for authentication: pop-os/cosmic-greeter#476
+    cosmic-launcher
+        Fix flickering when launcher opens: pop-os/cosmic-launcher#437
+    cosmic-monitor
+        Fix missing app icons: pop-os/cosmic-monitor#52
+        Horizontal scrolling of applications and processes pages: pop-os/cosmic-monitor#51
+    cosmic-settings
+        Fix invalid mac addresses passing validation: pop-os/cosmic-settings#2044
+        Make key names translatable: pop-os/cosmic-settings#2033
+        Change naming of super key action from disable to none: pop-os/cosmic-settings#1974
+    cosmic-settings-daemon
+        Retry pipewire connection on connection failure: pop-os/cosmic-settings-daemon#159
+    cosmic-store
+        Add animated loading indicator to explore and category pages: pop-os/cosmic-store#482
+    cosmic-term
+        Report focus in and out events: pop-os/cosmic-term#854
+        Report effective OSC 11 background: pop-os/cosmic-term#853
+    xdg-desktop-portal-cosmic
+        Important for distributors: migrate from make to just: pop-os/xdg-desktop-portal-cosmic#254
+        Honor libexecdir override for binary install path: pop-os/xdg-desktop-portal-cosmic#328
+        
 COSMIC Epoch 1.1.0
 
 Here is a summary of the changes since the last tag. For full details, see epoch-1.0.16...epoch-1.1.0
