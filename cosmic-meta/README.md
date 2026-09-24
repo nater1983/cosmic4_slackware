@@ -1,3 +1,68 @@
+COSMIC Epoch 1.9.0
+
+COSMIC Viewer has been released. It is an image viewer that supports a wide range of formats and has a number of built-in editing features: https://github.com/pop-os/cosmic-viewer
+COSMIC OSK has also been released. It is an on-screen keyboard that supports both touch and gamepad input: https://github.com/pop-os/cosmic-osk
+COSMIC Store has received a design overhaul, mostly so we can highlight the developer of each app/applet.
+
+Here is a summary of the changes since the last tag. For full details, see epoch-1.8.0...epoch-1.9.0
+
+    Translation updates and dependency updates for many projects
+    cosmic-applets
+        Add on-screen keyboard applet, which allows for toggling the OSK on demand: pop-os/cosmic-applets#1564
+        Fix panic on an audio sink or source being removed: pop-os/cosmic-applets#1567
+    cosmic-app-library
+        Fix pixelated icons: pop-os/cosmic-app-library#406
+        Fix context menu in search box not working: pop-os/cosmic-app-library#408
+    cosmic-bg
+        Use cosmic-bg to show the background on the lock screen, with a new wayland protocol: pop-os/cosmic-bg#144
+    cosmic-comp
+        Allow layer shell programs like the background and on-screen keyboard to be shown on the lock screen: pop-os/cosmic-comp#2792
+        Fix context menus in the app library and launcher: pop-os/cosmic-comp#2845
+        Fix super key being stuck in some applications when launcher is opened: pop-os/cosmic-comp#2846
+        Fix escape key not closing menus: pop-os/cosmic-comp#2859
+        Fix maximized windows going back to original size when they gain focus: pop-os/cosmic-comp#2868
+        Do not load shortcuts when running the login screen: pop-os/cosmic-comp#2879
+    cosmic-edit
+        Fix escape key not closing menus: pop-os/cosmic-edit#632
+    cosmic-files
+        Replace custom context menu code with libcosmic context menu: pop-os/cosmic-files#2052
+        Fix the drag selection box not updating: pop-os/cosmic-files#2064
+        Show icons for .exe files: pop-os/cosmic-files#2070
+        Save the file dialog's sort setting: pop-os/cosmic-files#2039
+        Fix context menu issues when shift is held: pop-os/cosmic-files#2071
+        Fix escape key not closing menus: pop-os/cosmic-files#2078
+    cosmic-greeter
+        Use cosmic-bg to show background on lock screen: pop-os/cosmic-greeter#528
+        Optional support for systemd-homed: pop-os/cosmic-greeter#456
+        Button to toggle on-screen keyboard: pop-os/cosmic-greeter#545
+    cosmic-launcher
+        Fix pixelated icons: pop-os/cosmic-launcher#464
+        Fix text input context menu not working: pop-os/cosmic-launcher#467
+    cosmic-monitor
+        Put dashboard graphs above top apps and processes in the small dashboard layout, and other maintenance: pop-os/cosmic-monitor#114
+    cosmic-notifications
+        Hide any currently visible notifications when do not disturb is enabled: pop-os/cosmic-notifications#177
+    cosmic-panel
+        Configurable border thickness: pop-os/cosmic-panel#679
+        Fix wayland protocol error when applets create layer shell surfaces: pop-os/cosmic-panel#687
+    cosmic-session
+        Set COSMIC_VERSION variable: pop-os/cosmic-session#218
+        Fix start-cosmic script when using nushell: pop-os/cosmic-session#226
+        Depend on and auto-start cosmic-osk: pop-os/cosmic-session#227
+        Fix compilation when autologin feature is used without systemd: pop-os/cosmic-session#223
+        Recommend cosmic-viewer and set it as the default image viewer: pop-os/cosmic-session#230
+    cosmic-settings
+        Show COSMIC version in the about page: pop-os/cosmic-settings#2200
+        Add on-screen keyboard settings: pop-os/cosmic-settings#2201
+        Fix issues with WireGuard: pop-os/cosmic-settings#2212
+        Add toggle for showing the day of the week: pop-os/cosmic-settings#2190
+    cosmic-settings-daemon
+        Sync font settings for GNOME applications: pop-os/cosmic-settings-daemon#194
+    cosmic-store
+        Add developer name to cards and other UI adjustments: pop-os/cosmic-store#609
+    cosmic-term
+        Fix escape key not closing menus: pop-os/cosmic-term#921
+
 COSMIC Epoch 1.8.0
 
 A large change to cosmic-comp has landed that improves touchscreen support. Further changes will be required for COSMIC applications. The on-screen keyboard, which is not yet included in releases, has seen a lot of work as well and will be released soon.
