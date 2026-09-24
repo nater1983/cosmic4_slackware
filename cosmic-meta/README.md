@@ -1,7 +1,9 @@
 COSMIC Epoch 1.9.0
 
 COSMIC Viewer has been released. It is an image viewer that supports a wide range of formats and has a number of built-in editing features: https://github.com/pop-os/cosmic-viewer
+
 COSMIC OSK has also been released. It is an on-screen keyboard that supports both touch and gamepad input: https://github.com/pop-os/cosmic-osk
+
 COSMIC Store has received a design overhaul, mostly so we can highlight the developer of each app/applet.
 
 Here is a summary of the changes since the last tag. For full details, see epoch-1.8.0...epoch-1.9.0
