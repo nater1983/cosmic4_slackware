@@ -103,7 +103,6 @@ install -Dm0644 "$CWD/$PRGNAM.pam" "$PKG/etc/pam.d/$PRGNAM"
 
 # create this in pkg to ensure it exists with proper perms
 mkdir -p $PKG/var/lib/$PRGNAM
-chown -R $PRGNAM:$PRGNAM $PKG/var/lib/$PRGNAM
 
 find $PKG -print0 | xargs -0 file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null || true
