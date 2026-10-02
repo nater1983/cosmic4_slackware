@@ -27,7 +27,8 @@
 # - tesseract builds work, so make that an option.
 # - Include pre-scaled PNG icons.
 
-wget -c https://casper.mupdf.com/downloads/archive/mupdf-1.27.2-source.tar.lz
+#wget -c https://casper.mupdf.com/downloads/archive/mupdf-1.27.2-source.tar.lz
+wget -c https://github.com/ArtifexSoftware/mupdf/archive/1.28.5/mupdf-1.28.5.tar.gz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
