@@ -17,12 +17,12 @@
 # 20240905 bkw:
 # - new maintainer.
 
-wget -c https://codeberg.org/gumbo-parser/gumbo-parser/archive/0.13.2.tar.gz
+wget -c https://codeberg.org/gumbo-parser/gumbo-parser/archive/0.14.1.tar.gz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=gumbo-parser
-VERSION=${VERSION:-0.13.2}
+VERSION=${VERSION:-0.14.1}
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
