@@ -127,6 +127,7 @@ make verbose=yes \
   USE_SYSTEM_GLUT=no \
   USE_SYSTEM_MUJS=no \
   USE_TESSERACT=$TESS \
+  USE_SYSTEM_LCMS2=no \
   build=release \
   prefix=/usr \
   libdir=/usr/lib$LIBDIRSUFFIX \
