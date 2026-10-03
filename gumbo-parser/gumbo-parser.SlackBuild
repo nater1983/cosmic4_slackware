@@ -17,12 +17,12 @@
 # 20240905 bkw:
 # - new maintainer.
 
-wget -c https://codeberg.org/gumbo-parser/gumbo-parser/archive/0.13.2.tar.gz
+wget -c https://slackware.uk/~urchlay/src/gumbo-parser-0.14.1.tar.gz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
 PRGNAM=gumbo-parser
-VERSION=${VERSION:-0.13.2}
+VERSION=${VERSION:-0.14.1}
 TAG=_cosmic
 BUILD=${BUILD:-1}
 PKGTYPE=${PKGTYPE:-txz}
@@ -64,18 +64,19 @@ fi
 set -e
 
 rm -rf $PKG
-mkdir -p $TMP $PKG
+mkdir -p $TMP $PKG $OUTPUT
 cd $TMP
-rm -rf $PRGNAM $VERSION
-tar xvf $CWD/$VERSION.tar.gz
-mv $PRGNAM $PRGNAM-$VERSION
-cd $PRGNAM-$VERSION
-chown -R root:root .
-find -L . \
- \( -perm 777 -o -perm 775 -o -perm 750 -o -perm 711 -o -perm 555 \
-  -o -perm 511 \) -exec chmod 755 {} \; -o \
- \( -perm 666 -o -perm 664 -o -perm 640 -o -perm 600 -o -perm 444 \
-  -o -perm 440 -o -perm 400 \) -exec chmod 644 {} \;
+rm -rf $PRGNAM
+tar xvf $CWD/$PRGNAM-$VERSION.tar.gz --no-same-owner
+cd $PRGNAM
+find . ! -type l    -a \( \
+  \(     -perm /111 -a ! -perm 755 -a -exec chmod -f 755 {} + \) -o \
+  \(   ! -perm /111 -a ! -perm 644 -a -exec chmod -f 644 {} + \) \)
+
+# 20250619 bkw: -Dtests=false avoids a dependency on gtest. note that
+# when tests is true, no actual testing is done: a gumbo_test binary
+# is built, but doesn't get run, and doesn't get installed with the
+# package.
 
 mkdir build
 cd build
@@ -95,15 +96,13 @@ cd build
   DESTDIR=$PKG $NINJA install
 cd ..
 
-find $PKG -print0 | xargs -0 file | grep -e "executable" -e "shared object" | grep ELF \
-  | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null || true
+# 20250619 bkw: don't see a way to tell meson not to build static libs...
+# upstream used both_libraries(), just rm the one we don't want.
+rm -f $PKG/usr/lib*/*.a
 
-rm -f $PKG/{,usr/}lib${LIBDIRSUFFIX}/*.a
-
-mkdir -p $PKG/usr/doc/$PRGNAM-$VERSION
-cp -a *.md doc/* \
-    $PKG/usr/doc/$PRGNAM-$VERSION
-
+PKGDOC=$PKG/usr/doc/$PRGNAM-$VERSION
+mkdir -p $PKGDOC
+cp -a *.md doc/* $PKGDOC
 
 # Remove any systemd files if present
 for path in usr/lib/systemd usr/lib64/systemd; do
