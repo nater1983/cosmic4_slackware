@@ -127,7 +127,7 @@ cd ../
 
 make verbose=yes \
   shared=yes \
-  barcode=yes \
+  FZ_ENABLE_BARCODE=no \
   USE_SYSTEM_LIBS=yes \
   USE_SYSTEM_GLUT=no \
   USE_SYSTEM_LCMS2=yes \
