@@ -98,9 +98,9 @@ TESS=no
 rm -rf $PKG
 mkdir -p $TMP $PKG $OUTPUT
 cd $TMP
-rm -rf $PRGNAM-$VERSION-source
-tar xvf $CWD/$PRGNAM-$VERSION-source.tar.lz
-cd $PRGNAM-$VERSION-source
+rm -rf $PRGNAM-$VERSION
+tar xvf $CWD/$PRGNAM-$VERSION.tar.lz
+cd $PRGNAM-$VERSION
 
 chown -R root:root .
 find . ! -type l    -a \
