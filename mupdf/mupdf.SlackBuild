@@ -127,22 +127,18 @@ cd ../
 
 make verbose=yes \
   shared=yes \
-  FZ_ENABLE_BARCODE=no \
+  barcode=yes \
   USE_SYSTEM_LIBS=yes \
   USE_SYSTEM_GLUT=no \
-  USE_SYSTEM_LCMS2=yes \
-  USE_MUJS=no \
-  USE_TESSERACT=$TESS \
-  USE_ZXINGCPP=no \
-  USE_EXTRACT=yes \
+  USE_SYSTEM_ZXINGCPP=no \
+  tesseract=$TESS \
   build=release \
   prefix=/usr \
   libdir=/usr/lib$LIBDIRSUFFIX \
   mandir=/usr/man \
-  docdir=/usr/doc/$PRGNAM-$VERSION \
+  docdir=$DOC \
   DESTDIR=$PKG \
   all extra-apps install install-extra-apps || print_failed_message
-
 
 # bins and libs are already stripped.
 gzip -9 $PKG/usr/man/man1/*.1
