@@ -131,6 +131,7 @@ make verbose=yes \
   USE_MUJS=no \
   USE_TESSERACT=$TESS \
   USE_ZXINGCPP=yes \
+  USE_EXTRACT=no \
   build=release \
   prefix=/usr \
   libdir=/usr/lib$LIBDIRSUFFIX \
