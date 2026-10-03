@@ -28,7 +28,7 @@
 # - Include pre-scaled PNG icons.
 
 #wget -c https://casper.mupdf.com/downloads/archive/mupdf-1.27.2-source.tar.lz
-wget -c https://github.com/ArtifexSoftware/mupdf/archive/1.28.5/mupdf-1.28.5.tar.gz
+wget -c https://github.com/ArtifexSoftware/mupdf-downloads/releases/download/1.28.5/mupdf-1.28.5-source.tar.lz
 
 cd $(dirname $0) ; CWD=$(pwd)
 
@@ -98,9 +98,9 @@ TESS=no
 rm -rf $PKG
 mkdir -p $TMP $PKG $OUTPUT
 cd $TMP
-rm -rf $PRGNAM-$VERSION
-tar xvf $CWD/$PRGNAM-$VERSION.tar.?z
-cd $PRGNAM-$VERSION
+rm -rf $PRGNAM-$VERSION-source
+tar xvf $CWD/$PRGNAM-$VERSION-source.tar.?z
+cd $PRGNAM-$VERSION-source
 
 chown -R root:root .
 find . ! -type l    -a \
