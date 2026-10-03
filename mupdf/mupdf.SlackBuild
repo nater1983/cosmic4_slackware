@@ -120,6 +120,8 @@ sed -i "s,-O2,$SLKCFLAGS," Makerules
 # avoid yet another dependency. I could have just said 'barcode=no'
 # but it seems like a useful feature.
 
+git clone https://github.com/ArtifexSoftware/extract.git
+
 make verbose=yes \
   shared=yes \
   barcode=yes \
