@@ -120,6 +120,8 @@ sed -i "s,-O2,$SLKCFLAGS," Makerules
 # avoid yet another dependency. I could have just said 'barcode=no'
 # but it seems like a useful feature.
 
+	rm -rvf thirdparty/{brotli,cmark-gfm,curl,freeglut,freetype,gumbo-parser,harfbuzz,jbig2dec,leptonica,libjpeg,openjpeg,tesseract,zint,zlib,zxing-cpp}
+
 make verbose=yes \
   shared=yes \
   barcode=yes \
