@@ -120,11 +120,6 @@ sed -i "s,-O2,$SLKCFLAGS," Makerules
 # avoid yet another dependency. I could have just said 'barcode=no'
 # but it seems like a useful feature.
 
-rm -fr thirdparty/{zxing-cpp,extract} ; cd thirdparty
-git clone https://github.com/ArtifexSoftware/extract.git
-git clone https://github.com/ArtifexSoftware/thirdparty-zxing-cpp zxing-cpp
-cd ../
-
 make verbose=yes \
   shared=yes \
   barcode=yes \
