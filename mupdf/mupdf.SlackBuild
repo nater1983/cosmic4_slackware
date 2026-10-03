@@ -120,16 +120,15 @@ sed -i "s,-O2,$SLKCFLAGS," Makerules
 # avoid yet another dependency. I could have just said 'barcode=no'
 # but it seems like a useful feature.
 
-	rm -rvf thirdparty/{brotli,cmark-gfm,curl,freeglut,freetype,gumbo-parser,harfbuzz,jbig2dec,leptonica,libjpeg,openjpeg,tesseract,zint,zlib,zxing-cpp}
+rm -rvf thirdparty/{brotli,cmark-gfm,curl,freeglut,freetype,gumbo-parser,harfbuzz,jbig2dec,leptonica,libjpeg,openjpeg,tesseract,zint,zlib,zxing-cpp}
 
 make verbose=yes \
   shared=yes \
   barcode=yes \
-  USE_SYSTEM_LIBS=yes \
+  USE_SYSTEM_LIBS=no \
   USE_SYSTEM_GLUT=no \
   USE_SYSTEM_MUJS=no \
   USE_TESSERACT=$TESS \
-  USE_SYSTEM_LCMS2=no \
   build=release \
   prefix=/usr \
   libdir=/usr/lib$LIBDIRSUFFIX \
