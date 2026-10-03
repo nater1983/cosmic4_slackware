@@ -74,6 +74,9 @@ fi
 
 set -e
 
+DOC=/usr/doc/$PRGNAM-$VERSION
+PKGDOC=$PKG$DOC
+
 # Building mupdf seems to work OK if an older version is installed,
 # but I only tested 1.21.1 when 1.18.0 was installed (doesn't mean
 # it works for all versions).
@@ -212,7 +215,7 @@ ln -s ../icons/hicolor/48x48/apps/$PRGNAM.png $PKG/usr/share/pixmaps/$PRGNAM.png
 
 # 'make install' already installed most of the docs.
 # 20240314 bkw: docs/api removed from upstream source.
-cp -a CONTRIBUTORS $PKG/usr/doc/$PRGNAM-$VERSION
+cp -a CONTRIBUTORS $PKGDOC
 
 mkdir -p $PKG/install
 if [ -f $CWD/slack-required ]; then cat $CWD/slack-required > $PKG/install/slack-required; fi
