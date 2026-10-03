@@ -125,10 +125,10 @@ rm -rvf thirdparty/{brotli,cmark-gfm,curl,freeglut,freetype,gumbo-parser,harfbuz
 make verbose=yes \
   shared=yes \
   barcode=yes \
-  USE_SYSTEM_LIBS=no \
+  USE_SYSTEM_LIBS=yes \
   USE_SYSTEM_GLUT=no \
   USE_SYSTEM_MUJS=no \
-  USE_TESSERACT=yes \
+  USE_TESSERACT=$TESS \
   build=release \
   prefix=/usr \
   libdir=/usr/lib$LIBDIRSUFFIX \
