@@ -83,13 +83,14 @@ find -L . \
   -o -perm 440 -o -perm 400 \) -exec chmod 644 {} \;
 
 cargo fetch --locked
-sed 's/libexec/lib${LIBDIRSUFFIX}/g' -i Makefile src/main.rs
+sed 's/libexec/lib${LIBDIRSUFFIX}/g' -i src/main.rs
 sed 's/sudo/wheel/g' -i data/polkit-1/rules.d/cosmic-settings-daemon.rules
 sed -i "s|adw-gtk3|Adwaita|g" src/theme.rs
 
-RUSTFLAGS+=" -C link-arg=-fuse-ld=lld"
-make ARGS+=" --frozen --release"
-make DESTDIR=$PKG install
+export RUSTUP_TOOLCHAIN=stable
+RUSTFLAGS+=" -C link-arg=-fuse-ld=mold"
+just build-release --frozen
+just rootdir=$PKG install
 
 find $PKG -print0 | xargs -0 file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null || true
