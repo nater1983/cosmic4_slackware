@@ -1,0 +1,19 @@
+# HOW TO EDIT THIS FILE:
+# The "handy ruler" below makes it easier to edit a package description.
+# Line up the first '|' above the ':' following the base package name, and
+# the '|' on the right side marks the last column you can put a character in.
+# You must make exactly 11 lines for the formatting to be correct.  It's also
+# customary to leave one space after the ':' except on otherwise blank lines.
+
+              |-----handy-ruler------------------------------------------------------|
+cosmic-monitor: cosmic-monitor (COSMIC System Monitor)
+cosmic-monitor:
+cosmic-monitor: CPU, memory, GPU, disk, network, and applications all in one layout.
+cosmic-monitor: The system monitor shows CPU GPU memory and disk usage in real time 
+cosmic-monitor: with beautiful charts. It also includes process management and
+cosmic-monitor: resource limiting capabilities.
+cosmic-monitor:
+cosmic-monitor: Homepage: https://github.com/pop-os/cosmic-monitor
+cosmic-monitor:
+cosmic-monitor:
+cosmic-monitor:
