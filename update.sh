@@ -66,6 +66,7 @@ declare -A CORE_REPOS=(
   ["cosmic-icons"]="cosmic-icons"
   ["cosmic-idle"]="cosmic-idle"
   ["cosmic-launcher"]="cosmic-launcher"
+  ["cosmic-monitor"]="cosmic-monitor"
   ["cosmic-notifications"]="cosmic-notifications"
   ["cosmic-osd"]="cosmic-osd"
   ["cosmic-osk"]="cosmic-osk"
